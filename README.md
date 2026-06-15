@@ -4,7 +4,7 @@ This repository contains essential documentation and templates for developers bu
 
 ## Objective
 
-The goal is to provide a centralized resource for ensuring that all applications are developed, tested, and deployed according to V-Decent V2.3 standards, utilizing Docker Compose, Cloudflare Tunnels, and Coolify orchestration.
+This repository provides guidelines and documentation for application developers to build, test, and deploy applications compatible with **V-Decent** infrastructure. These resources follow the **V3.0 Development Guidelines**.
 
 ## Available Resources
 

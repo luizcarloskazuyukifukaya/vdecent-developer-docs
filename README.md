@@ -29,10 +29,10 @@ A pre-configured prompt template for AI coding agents (Gemini, Claude, Cursor, e
 ## V-Decent Compatibility Summary
 
 - **Docker Compose:** Mandatory `docker-compose.yaml` at root.
-- **No Host Port Mapping:** Use `expose` for internal networking.
-- **Network Isolation:** Separate `external-tier` and `internal-tier`.
-- **Labels:** Use `coolify.managed=true` for ingress routing.
-- **Health Checks:** `/health` endpoint and Docker healthchecks for data services.
+- **No Host Port Mapping:** Use `expose` for internal networking only.
+- **CRITICAL: No Network Definitions:** Do **not** define custom networks or a `networks:` section in `docker-compose.yaml`. This is a limitation to ensure compatibility with V-Decent proxy routing.
+- **Labels:** The `coolify.managed=true` label is **recommended** on the public-facing service.
+- **Health Checks:** Applications must provide a `/health` endpoint and use Docker healthchecks for data services.
 
 ## License
 

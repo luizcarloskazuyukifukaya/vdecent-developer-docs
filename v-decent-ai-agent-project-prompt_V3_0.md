@@ -16,9 +16,9 @@ The project must follow the **V-Decent Application Development Guide (en, V3\_0)
 
 ## ---
 
-**Application to Build**
+**Application to Deploy in V-Decent**
+Your application can be deployed to V-Decent Virtual Distributed Infrastructure (V-Decent) by meeting the Application Development Requirements for V-Decent, which is described in this document, but to deploy using V-Decent Application Manager (App Manager), you need to define the followings:
 
-Replace the placeholders below before starting:  
 Application name: \<APP\_NAME\>  
 Primary shortname / subdomain: \<APP\_SHORTNAME\>  
 Target production URL: https://\<APP\_SHORTNAME\>.v-decent.org  
@@ -35,6 +35,7 @@ Git branch for deployment: \<BRANCH\_NAME\>
 Developer group: \<DEVELOPER\_GROUP\>  
 GitHub account or organization: \<GITHUB\_ACCOUNT\_OR\_ORG\>
 
+Replace the placeholders for your application to prepare for the deployment with App Manager. Note that these are not necessary to design and develop your application, but eventually those information will be required.  
 ## ---
 
 **Non-Negotiable V-Decent Compatibility Rules**

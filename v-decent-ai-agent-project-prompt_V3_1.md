@@ -79,6 +79,80 @@ Integrate explicit Docker engine healthcheck routines for all downstream data st
 
 ## ---
 
+**Local Development Setup (for testing without Coolify)**
+
+For local development and testing, provide a separate Docker Compose override file and a launch script alongside the production manifest. The production docker-compose.yaml must never contain host port mappings; local convenience goes in separate files that are never uploaded during V-Decent registration.
+
+### **1\. docker-compose.dev.yaml (Local-Only Base)**
+
+Create a separate compose file for local development that enables volume mounts and a debug-friendly entrypoint. This file uses `build: .` and `volumes` so code changes take effect without rebuilding, plus a TTY-aware entrypoint that waits for dependencies. Do NOT include this file in V-Decent registration.
+
+### **2\. docker-compose.local.yaml (Port Overrides)**
+
+Create a minimal override file that adds `ports:` mappings so services are reachable from the host browser. This file is written at runtime by `launch-local.sh` and must not be committed to the V-Decent registration repository.
+
+Template (adapt service names to your application):
+
+`services:`      
+  `<db-service>:`      
+    `ports:`      
+      `- "${DB_PORT}:5432"`      
+  `<backend-service>:`      
+    `ports:`      
+      `- "${BACKEND_PORT}:8000"`      
+  `<frontend-service>:`      
+    `ports:`      
+      `- "${FRONTEND_PORT}:80"`      
+  `<sidecar-service>:`      
+    `ports:`      
+      `- "${SIDECAR_PORT}:8000"`
+
+If the application does not use a sidecar (Pattern A — Stateless), omit the sidecar service line.
+
+### **3\. launch-local.sh (Orchestration Script)**
+
+Create an executable script at the repository root that handles the entire local launch lifecycle. The script must perform these steps in order:
+
+1. Read `INIT_DB` from the environment (default `no`) to optionally initialize database schemas on first launch.
+2. Scan candidate host ports and select the first available one for each service:
+   - Frontend: 5000, 5002, 5004, 5006
+   - Backend: 5001, 5003, 5005, 5007
+   - Database: 6433, 6434, 6435, 6436
+   - Sidecar: 8002, 8003, 8004, 8005
+3. Detect the LAN IP using `hostname -I | awk '{print $1}'` so the frontend can be accessed from other devices (e.g., on WSL2, Windows browsers must use this IP not localhost).
+4. If a `sidecar/` directory exists, check for `token.json` and `credentials.json`. If `token.json` is missing but `credentials.json` is present, offer interactive Google Drive token generation by creating a temporary venv and running `generate_token.py`. Only offer this in interactive shells.
+5. Ensure `.env` exists (copy from `.env.example` if not), then update dynamic values:
+   - `NEXT_PUBLIC_API_URL=http://<LOCAL_IP>:<BACKEND_PORT>`
+   - `INIT_DB` from environment
+   - Fill any missing defaults (JWT secret, admin credentials, database URLs)
+   - Warn if a shell environment variable differs from the `.env` value — the shell value takes precedence.
+6. Export all `.env` values to the shell so Docker Compose inherits them.
+7. Write `docker-compose.local.yaml` with the discovered ports.
+8. Launch all services: `docker compose -f docker-compose.dev.yaml -f docker-compose.local.yaml up --build -d`
+9. Print access URLs and useful commands (view logs, stop, full reset).
+
+Include the `# ponytail:` comment marker on any local-only defaults to clearly distinguish them from production values.
+
+### **4\. Local Environment Variable Conventions**
+
+The `.env` file must include local-only defaults clearly flagged:
+
+`INIT_DB=no  # ponytail: local dev only — set to "yes" to initialize schema on first launch`  
+` `  
+`# Dynamic values (set by launch-local.sh)`  
+`NEXT_PUBLIC_API_URL=http://localhost:5001`  
+` `  
+`# Local defaults (override for production)`  
+`JWT_SECRET=super-secret-dev-key           # ponytail: local dev only`  
+`POSTGRES_USER=postgres                    # ponytail: local dev only`  
+`POSTGRES_PASSWORD=postgres                # ponytail: local dev only`  
+`POSTGRES_DB=ops_ledger                    # ponytail: local dev only`  
+`DATABASE_URL=postgresql://postgres:postgres@db:5432/ops_ledger  # ponytail: local dev only`
+
+The **Production Environment Variables** section in the README must list which variables the app operator must override during V-Decent Application Manager registration.
+
+## ---
+
 **Supported Application Types and Data Persistence Rules**
 
 V-Decent supports three application patterns. Choose one explicitly and document it in the README and handover document.
@@ -147,7 +221,10 @@ Use this as the baseline structure. Notice that all custom network sections are 
 **Required Repository Structure**
 
 `.`    
-`├── docker-compose.yaml`    
+`├── docker-compose.yaml            # production manifest for V-Decent`    
+`├── docker-compose.dev.yaml        # local-only base (volumes, debug entrypoint)`    
+`├── docker-compose.local.yaml      # local port overrides (generated at runtime by launch-local.sh)`    
+`├── launch-local.sh                # entry point for local development`    
 `├── Dockerfile`    
 `├── .env.example`    
 `├── README.md`    
@@ -164,7 +241,8 @@ Use this as the baseline structure. Notice that all custom network sections are 
 2. Do not use host port mappings in the primary docker-compose.yaml.  
 3. **CRITICAL TASK CHECK:** Verify that the network definition section is NOT included anywhere within the docker-compose.yaml. Do not define external-tier, internal-tier, or join external networks like vdecent-ingress, as it breaks the Coolify/Traefik integration.  
 4. Include coolify.managed=true label on the public-facing service to allow native orchestrator ingress mapping.  
-5. Add a /health endpoint and configure explicit Docker engine healthcheck routines.
+5. Add a /health endpoint and configure explicit Docker engine healthcheck routines.  
+6. Generate a local development launch flow using `launch-local.sh` and `docker-compose.local.yaml`. The production `docker-compose.yaml` must never include host port mappings or custom networks.
 
 ## ---
 
@@ -176,4 +254,8 @@ Use this as the baseline structure. Notice that all custom network sections are 
 \[ \] Public-facing service includes the coolify.managed=true label.  
 \[ \] Downstream storage services include strict Docker healthcheck routines.  
 \[ \] Application provides a /health endpoint.  
-\[ \] Application has .env.example with an unpopulated reference profile.
+\[ \] Application has .env.example with an unpopulated reference profile.  
+\[ \] `launch-local.sh` exists at repository root and is executable.  
+\[ \] `docker-compose.local.yaml` exists (can be gitignored; `launch-local.sh` generates it).  
+\[ \] `docker-compose.dev.yaml` exists for local development volume mounts and debug entrypoint.  
+\[ \] `launch-local.sh` detects available ports, syncs `.env`, and starts compose with both `-f` files.

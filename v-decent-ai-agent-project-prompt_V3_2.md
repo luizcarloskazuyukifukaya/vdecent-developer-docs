@@ -1,7 +1,7 @@
 # **V-Decent AI Coding Agent Project Prompt**
 
-**Prompt version:** 3.0  
-**Based on:** V-Decent Application Development Guide (en, V3\_0)  
+**Prompt version:** 3.2  
+**Based on:** V-Decent Application Development Guide (en, V3\_1)  
 **Audience:** Human developers using AI coding agents such as Codex, Gemini CLI, Claude Code, Cursor, or similar tools.  
 Use this prompt when starting or updating an application project intended to run on **V-Decent Distributed Infrastructure (Coolify Orchestration)**, also called **V-Decent**.
 
@@ -12,7 +12,7 @@ Use this prompt when starting or updating an application project intended to run
 You are an expert full-stack application developer. Build this application so it can be developed, tested, registered, handed over, and deployed through **V-Decent Distributed Infrastructure**.  
 V-Decent is a distributed datacenter hosting environment that uses **Docker Compose**, **Coolify orchestration**, and the **V-Decent Application Manager**. The application must be compatible with V-Decent deployment rules from the beginning.  
 Your job is to create production-ready application code, repository structure, Docker configuration, environment-variable templates, local test instructions, and deployment handover notes.  
-The project must follow the **V-Decent Application Development Guide (en, V3\_0)**. You must pay specific attention to network definitions to avoid proxy routing faults.
+The project must follow the **V-Decent Application Development Guide (en, V3\_1)**. You must pay specific attention to network definitions to avoid proxy routing faults.
 
 ## ---
 
@@ -55,10 +55,27 @@ Do not use a different file name such as docker-compose.yml, compose.yaml, or do
 Do **not** map, expose, or bind physical port configurations directly to the host network interface (e.g., avoid ports: "8080:80"). Direct bindings create network conflicts across multi-tenant nodes. All inbound ingress routing paths are dynamically managed and isolated by Coolify proxy instances.  
 Use the expose array parameter to identify internal networking endpoints. This alerts upstream container bridges where application traffic is listening.
 
+**This is not optional and not a style preference.** A `ports:` entry in docker-compose.yaml will fail App Manager deployment even though it runs perfectly fine with a local `docker compose up` — local success does NOT mean it is deployable. Common rationalizations that lead to violating this rule, and why they are wrong here:
+
+| AI agent instinct | Reality on V-Decent |
+|---|---|
+| "`ports:` is the standard Compose way to expose a service, `expose:` alone looks incomplete." | Standard Compose practice does not apply. `ports:` binds the host interface directly; V-Decent nodes are multi-tenant and Coolify's proxy — not the host — must own ingress. |
+| "I need `ports:` so I can test this locally in the same file." | Use the separate `docker-compose.local.yaml` override (see Local Development Setup). The production `docker-compose.yaml` must never carry host bindings, even temporarily "for testing." |
+| "It worked when I ran `docker compose up` — good enough to ship." | `docker compose up` does not validate App Manager compatibility. It will happily run a file that App Manager will reject. Validate the production file in isolation before registering (see validation step below). |
+
 ### **3\. CRITICAL: Network Definition Prohibited (Coolify/Traefik Compatibility)**
 
 Due to a limitation of Coolify/Traefik, defining custom or internal-only networks (e.g., bridge networks like external-tier or internal-tier) inside the docker-compose.yaml **MAY NOT work as expected and causes critical deployment issues**. You **MUST STRONGLY AVOID AND NOT DEFINE ANY NETWORKS** within the docker compose file.  
 As part of your development tasks, you **MUST check if any network section is included in the file**. If found, it must be removed. Let the underlying Docker daemon and Coolify dynamically manage subnet pools natively behind the scenes. You must include the platform label "coolify.managed=true" on the public-facing service container to notify Coolify to attach its managed network structure correctly.
+
+**This is the single most common cause of "worked locally, failed on App Manager."** A custom `networks:` block (top-level or per-service) is valid Compose and will start fine with a plain `docker compose up` on your machine — the failure only surfaces during App Manager/Coolify registration. Do not trust local success as proof of compatibility. Common rationalizations that lead to violating this rule, and why they are wrong here:
+
+| AI agent instinct | Reality on V-Decent |
+|---|---|
+| "I'll add an internal network to isolate the db from the public network — that's a security best practice." | Prohibited regardless of intent. Coolify/Traefik cannot resolve custom network topologies reliably; this breaks proxy routing to the public-facing service, not just "isolation." |
+| "The default bridge network isn't explicit enough, I'll declare it for clarity." | Declaring the default network explicitly still creates a `networks:` key App Manager will reject. Leave the key out entirely — do not declare it, even to match the default. |
+| "It ran fine with `docker compose up`, so the network config is safe." | Local `docker compose up` will start containers on a custom network without complaint. App Manager parses the manifest independently and fails deployment on this key regardless of local runtime success. Validate with the production file alone (see below) before assuming it is safe. |
+| "I only added it to one service, not the whole stack." | Any service-level `networks:` entry is equally forbidden, not just a top-level `networks:` section. |
 
 ### **4\. Exactly One Public-Facing Service Unless Specified Otherwise**
 
@@ -151,6 +168,43 @@ The `.env` file must include local-only defaults clearly flagged:
 
 The **Production Environment Variables** section in the README must list which variables the app operator must override during V-Decent Application Manager registration.
 
+### **5\. Pre-Registration Compatibility Validation (Required)**
+
+**Why this step exists:** `docker-compose.dev.yaml` and `docker-compose.local.yaml` are layered on top of `docker-compose.yaml` for local testing. Plain `docker compose up` merges all three files and will run successfully even if the base `docker-compose.yaml` itself still contains a forbidden `networks:` or `ports:` key — Docker doesn't care, but App Manager parses `docker-compose.yaml` **alone** and will reject it. A green local test is not evidence of App Manager compatibility. Two checks are required before registration:
+
+**a) Static validation of the production manifest in isolation.** Create an executable script at the repository root named exactly `validate-vdecent-compat.sh`:
+
+`#!/usr/bin/env bash`  
+`set -euo pipefail`  
+`FILE="docker-compose.yaml"`  
+`FAIL=0`  
+`RESOLVED=$(docker compose -f "$FILE" config --format json)`
+
+`if echo "$RESOLVED" | jq -e '.networks // empty | length > 0' >/dev/null 2>&1; then`  
+  `echo "FAIL: top-level 'networks:' found in $FILE — forbidden on V-Decent."; FAIL=1`  
+`fi`
+
+`if echo "$RESOLVED" | jq -e '.services[] | select(.networks != null)' >/dev/null 2>&1; then`  
+  `echo "FAIL: a service declares 'networks:' in $FILE — forbidden on V-Decent."; FAIL=1`  
+`fi`
+
+`if echo "$RESOLVED" | jq -e '.services[] | select(.ports != null and (.ports|length>0))' >/dev/null 2>&1; then`  
+  `echo "FAIL: a service declares 'ports:' in $FILE — forbidden on V-Decent, use 'expose:'."; FAIL=1`  
+`fi`
+
+`if [ "$FAIL" -eq 0 ]; then echo "OK: $FILE is App Manager-compatible."; else exit 1; fi`
+
+Run this against `docker-compose.yaml` only — never against the merged dev/local files, since those are expected to contain `ports:` and exist solely for local convenience.
+
+**b) Runtime smoke test using the production manifest alone, with no overrides:**
+
+`docker compose -f docker-compose.yaml up -d --build`  
+`docker compose -f docker-compose.yaml exec <public-service> curl -f http://localhost:<PORT>/health`
+
+This proves the app boots and its `/health` endpoint responds using only `expose:` — the exact networking mode Coolify uses — instead of relying on the host-port convenience mapping from `docker-compose.local.yaml`, which can mask a misconfigured `expose:` value. Tear down afterward with `docker compose -f docker-compose.yaml down`.
+
+Both checks must pass before handing the application to V-Decent Application Manager registration.
+
 ## ---
 
 **Supported Application Types and Data Persistence Rules**
@@ -175,7 +229,7 @@ Use this when a relational/non-relational database, persistent data caching node
 
 ## ---
 
-**Recommended Docker Compose Baseline for V-Decent V3\_0**
+**Recommended Docker Compose Baseline for V-Decent V3\_1**
 
 Use this as the baseline structure. Notice that all custom network sections are strictly removed and commented out as forbidden:  
 `services:`      
@@ -189,7 +243,7 @@ Use this as the baseline structure. Notice that all custom network sections are 
     `depends_on:`      
       `db:`      
         `condition: service_healthy`      
-`# DO NOT DEFINE NETWORK (Prohibited in V3_0 due to Coolify/Traefik limitations)`  
+`# DO NOT DEFINE NETWORK (Prohibited in V3_1 due to Coolify/Traefik limitations)`  
     `labels:`      
       `- "coolify.managed=true" # Notify Coolify to use this network`     
       
@@ -225,6 +279,7 @@ Use this as the baseline structure. Notice that all custom network sections are 
 `├── docker-compose.dev.yaml        # local-only base (volumes, debug entrypoint)`    
 `├── docker-compose.local.yaml      # local port overrides (generated at runtime by launch-local.sh)`    
 `├── launch-local.sh                # entry point for local development`    
+`├── validate-vdecent-compat.sh     # static check: docker-compose.yaml has no networks:/ports: before registration`    
 `├── Dockerfile`    
 `├── .env.example`    
 `├── README.md`    
@@ -242,7 +297,8 @@ Use this as the baseline structure. Notice that all custom network sections are 
 3. **CRITICAL TASK CHECK:** Verify that the network definition section is NOT included anywhere within the docker-compose.yaml. Do not define external-tier, internal-tier, or join external networks like vdecent-ingress, as it breaks the Coolify/Traefik integration.  
 4. Include coolify.managed=true label on the public-facing service to allow native orchestrator ingress mapping.  
 5. Add a /health endpoint and configure explicit Docker engine healthcheck routines.  
-6. Generate a local development launch flow using `launch-local.sh` and `docker-compose.local.yaml`. The production `docker-compose.yaml` must never include host port mappings or custom networks.
+6. Generate a local development launch flow using `launch-local.sh` and `docker-compose.local.yaml`. The production `docker-compose.yaml` must never include host port mappings or custom networks.  
+7. **Do not treat a successful local `docker compose up` as proof of App Manager compatibility.** The dev/local override files legitimately add `ports:`, which hides a violation still present in the base `docker-compose.yaml`. Before considering the task done, run `validate-vdecent-compat.sh` against `docker-compose.yaml` alone, and separately smoke-test `docker-compose.yaml` with no override files using `docker compose exec ... curl .../health` to confirm the app works over `expose:` only.
 
 ## ---
 
@@ -258,4 +314,6 @@ Use this as the baseline structure. Notice that all custom network sections are 
 \[ \] `launch-local.sh` exists at repository root and is executable.  
 \[ \] `docker-compose.local.yaml` exists (can be gitignored; `launch-local.sh` generates it).  
 \[ \] `docker-compose.dev.yaml` exists for local development volume mounts and debug entrypoint.  
-\[ \] `launch-local.sh` detects available ports, syncs `.env`, and starts compose with both `-f` files.
+\[ \] `launch-local.sh` detects available ports, syncs `.env`, and starts compose with both `-f` files.  
+\[ \] `validate-vdecent-compat.sh` exists, is executable, and passes against `docker-compose.yaml` alone (no networks:, no ports:).  
+\[ \] A runtime smoke test of `docker-compose.yaml` with **no override files** confirms `/health` responds via `docker compose exec` — not just via the local port override.

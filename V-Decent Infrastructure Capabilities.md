@@ -251,3 +251,101 @@ App developers run the CLI locally before deploying (`pip install -e .`, then `v
 - `vdecent-app-manager/backend/routers/webhooks.py` — Sentinel heartbeat + Node Manager node-status webhooks.
 - `vdecent-app-manager/sidecar/backup.py` — `pg_dump` + Google Drive backup/restore/purge.
 - `vdecent-app-manager/docs/vdecent-app-developer-manual.md` — developer constraints (no host ports, no custom networks).
+
+## 5. Operations Platform
+
+### 5.1 Role in the Ecosystem
+
+`vdecent-operations-platform` is the **identity and financial authority** of the ecosystem. It is the single sign-on (SSO) provider for the App Manager and Node Manager, issuing RS256-asymmetric JWTs that those managers validate when accepting users ([Section 1.3](#13-data-flows)); it runs the onboarding request/review/approval flow through which every partner and developer account is created; and each month it reconciles the App Manager's per-app and Node Manager's per-node SLA snapshots into a **triple ledger** — inbound invoices to app owners, outbound payout receipts to node partners, and internal expense/reimbursement records. It owns the money-facing documents: invoices and payout receipts are generated as digitally signed PDFs and archived to Google Drive. Around this core sit operator-facing administration (users, roles, developer financial models, system settings, backups) and a public pricing endpoint.
+
+### 5.2 Capabilities Offered
+
+- **SSO identity provider** (`vdecent-operations-platform/backend/auth.py`, `vdecent-operations-platform/backend/routers/auth.py`):
+  - **Google OAuth** — `GET /api/v1/auth/google/login` builds the authorization URL (redirect URI must match the `GOOGLE_ALLOWED_REDIRECT_URIS` allow-list); both a JSON `POST /api/v1/auth/google/callback` (ID token or code) and a redirect-based `GET` callback (server-side code exchange) are supported, verifying the token via Google's `verify_oauth2_token` and requiring `email_verified`.
+  - **GitHub OAuth** — `GET /api/v1/auth/github/login` + `POST /api/v1/auth/github/callback` exchange the code for an access token, fetch the profile and the **verified primary email** (required); a one-time GitHub access token is returned to the caller (the Ops Platform never persists it).
+  - **RS256 JWTs** — `create_jwt_token` signs a payload with a **2048-bit RSA private key** (header `kid: vdecent-ops-key-2026`, `alg: RS256`; issuer `https://ops.v-decent.org`; audience `["vdecent-ops", "vdecent-nm", "vdecent-am"]`). Standard **JWKS** is served at `GET /api/v1/auth/jwks` and a raw-PEM variant at `GET /api/v1/auth/public-key` for OpenID/RFC 7517 consumers. If RSA keys are absent it degrades to HS256 with `JWT_SECRET` (dev fallback only). Keys are auto-generated into `.env` when missing (`vdecent-operations-platform/backend/utils/key_generator.py`).
+  - **Break-glass admin** — `POST /api/v1/auth/break-glass/login` is an emergency root-password (bcrypt) login **restricted to `GLOBAL_ADMIN`**; it returns a `LOCAL_ADMIN`-scoped token flagged `isBreakGlass: true`, a 4-hour session, and writes a `WARN` audit entry. The root admin is bootstrapped from `INITIAL_ADMIN_EMAIL` (default `luizcarloskazuyukifukaya@gmail.com`) on its first Google sign-in.
+  - **Sessions** — the web UI gets an HttpOnly `vdecent_session` cookie (Secure, SameSite=Lax, 8 h; 4 h for break-glass); API clients authenticate with its Bearer token.
+- **Multi-role accounts** — one user holds a `roles` list (plus a legacy single `role`). Canonical OAuth roles (`vdecent-operations-platform/backend/routers/oauth_users.py`): **`GLOBAL_ADMIN`, `OP_OPERATOR`, `NODE_PARTNER`, `APP_OWNER`, `OP_VIEWER`, `AM_VIEWER`, `NM_VIEWER`**; local fallback roles `LOCAL_ADMIN`/`LOCAL_VIEWER` and legacy renames ADMIN→`GLOBAL_ADMIN`, OPERATOR→`OP_OPERATOR`, VIEWER→`LOCAL_VIEWER` round out the set (`vdecent-operations-platform/backend/roles.py`). `GLOBAL_ADMIN` implies all other roles for gate checks only (never persisted expanded). Gate helpers in `auth.py`: operators need `OP_OPERATOR`/`LOCAL_ADMIN`, admins `GLOBAL_ADMIN`/`LOCAL_ADMIN`.
+- **Onboarding request/review/approve** (`vdecent-operations-platform/backend/routers/onboarding.py`):
+  - `POST /api/v1/onboarding/apply` is a public self-registration that cryptographically verifies a Google ID token or GitHub code, then records a `PENDING` request with source app (`NODE_MANAGER`/`APP_MANAGER`/`OPS_PLATFORM`), requested role (`NODE_PARTNER`, `APP_OWNER`, `OP_OPERATOR`, `GLOBAL_ADMIN`), contact/business metadata, and the chosen financial model. Duplicate/identical applications return `ALREADY_ACTIVE` or `PENDING_APPROVAL`.
+  - Operators review via `GET /api/v1/onboarding/requests` (+ `/requests/{id}`), may edit draft metadata (`PATCH /requests/{id}/resource`) before deciding. `POST /requests/{id}/approve` **verifies the operator-selected resource against the source manager first** (developer group via App Manager for `APP_OWNER`, partner via Node Manager for `NODE_PARTNER`, both must be `ACTIVE`), then activates the Ops user, binds `am_group_id`/`nm_partner_id`, creates the `DeveloperPartner` row, and returns an audit log line. `POST /requests/{id}/reject` records a rejection reason.
+  - Re-binding an existing email to the **other OAuth provider** (Google↔GitHub) is treated as a privileged account takeover and is restricted to `GLOBAL_ADMIN` (requires `force_provider_switch`).
+  - `GET /api/v1/onboarding/accounts/verify` is the **internal verification endpoint** for App Manager / Node Manager, gated by the shared `INTERNAL_API_TOKEN` header; it returns status, canonical roles, and the linked `nm_partner_id`/`am_group_id` (or `PENDING_APPROVAL`/`NOT_FOUND`).
+- **Inbound billing — monthly invoices** (`vdecent-operations-platform/backend/tasks/monthly_reconciliation.py`, `vdecent-operations-platform/backend/routers/billing.py`):
+  - Each cycle pulls the App Manager's `applications-sla` export into `AppSlaSnapshot` rows (one per app per month/year). A month's **SLA-tier thresholds are locked on the first sync** — re-syncing a past month refreshes SLA % data but preserves the thresholds that were in force when the period was first billed.
+  - Per-app amount = **base price × size multiplier × SLA tier rate**: base `inbound_s_price` (default **R$ 49.99**), multipliers S=1 / M=2 / L=4 / XL=8 (configurable), and tier rates **FULL** 100% / **PARTIAL** 75% / **FREE** 0% (configurable). One `BillingOrder` per owner per period aggregates its apps (owner SLA = amount-weighted average); it is `PENDING` normally or **`EXEMPTED`** when every app carries financial model `none` (100 % exemption). Closed-loop apps (developer-owned hosting) are flagged via `is_closed_loop`.
+  - Invoices carry a **PIX** code (`pix_code`, from `order.pix_code`) for payment, are submitted to the sidecar for PDF generation, and are downloadable with signature validation at `GET /api/v1/billing/{order_id}/pdf`.
+  - Operator transitions (`PATCH /api/v1/billing/{order_id}`): setting **`OVERDUE`** zeroes the actual amount and suspends the apps via App Manager; setting **`PAID`** sets `actual = planned` and resumes the apps (`_call_am_resume`); `PENDING`/`CANCELLED`/`EXEMPTED` also trigger a resume.
+- **Outbound payouts — payout receipts per node partner** (`vdecent-operations-platform/backend/tasks/monthly_reconciliation.py`, `vdecent-operations-platform/backend/routers/payouts.py`):
+  - The Node Manager's `nodes-sla` export populates `NodeSlaSnapshot` rows (per node per month/year); each leaf node computes its payout on a **sliding scale** (`calculate_sliding_payout`): **0 below the PARTIAL floor, full payout at/above the FULL commitment, and linear `full_pay × sla_30d / commit_sla` in between** (commit = **99.9** default, floor = **95.0**). `full_pay` is the node's `payout_baseline` (pulled from Node Manager), falling back to `VRU capacity × outbound_vru_price` (default **R$ 10.00/VRU**).
+  - One consolidated `PayoutReceipt` per partner per period; **regional-master partners additionally earn a 5% commission** (`MASTER_COMMISSION_PERCENT`) on each of their `sub_partners'` leaf payouts, merged into the master's receipt.
+  - Statuses are `PENDING`/`PAID`/`CANCELLED` (`PATCH /api/v1/payouts/{id}`); paid receipts show "Sliding scale based on 99.9% commitment".
+- **Developer financial models** (`vdecent-operations-platform/backend/utils/developer_billing.py`, `vdecent-operations-platform/backend/routers/developer_partners.py`):
+  - **`none`** — internal/demo/agent apps: 100 % exemption (no invoice, `EXEMPTED`).
+  - **`referral`** — referral commission of **10%** (standard) or **15%** (partner tier `founding_dev` within the first 24 months / 730 days) of the base price, credited to `payout_balance_brl`/`lifetime_earnings_brl` and recorded as a `DeveloperPayoutReceipt` (`DEV-PO-…`, one per app per period).
+  - **`resale`** — an instant wholesale discount (not a cash payout) of **15%** (1–4 active resale apps), **20%** (5–9), **25%** (10+).
+  - Partners are tracked per developer group in `DeveloperPartner` (tier, financial model, PIX key, balances); developer payouts can be disbursed (`POST /api/developer-payouts/{group_id}/disburse`).
+- **Expenses + reimbursements** (`vdecent-operations-platform/backend/routers/expenses.py`, `vdecent-operations-platform/backend/routers/reimbursements.py`):
+  - Expense lifecycle `DRAFT → PENDING_APPROVAL → APPROVED/REJECTED`: the owner edits/submits their own drafts; a `GLOBAL_ADMIN` (other than the employee) approves or rejects.
+  - Receipts upload as files (`POST /api/v1/expenses/{id}/receipt`): PDFs are Ghostscript-optimized, **RSA-signed like invoices**, and archived to a Google Drive *Receipts/Draft → Receipts/Approved* folder tree; failed Drive uploads fall back to local `backend/storage/receipts`.
+  - `POST /api/v1/reimbursements` bundles **approved** expenses into a reimbursement (each expense reimbursed once); recurring expenses are re-created each month during reconciliation.
+- **SLA reconciliation & scheduling** (`vdecent-operations-platform/backend/main.py`):
+  - **1st of the month at 00:00** — reconcile the previous month's snapshots into orders/payouts (`automated_monthly_reconciliation`).
+  - **16th at 00:00** — `automated_overdue_check` flips the previous month's still-`PENDING` orders to **`OVERDUE`**, zeroes them, and **suspends the apps via App Manager**.
+  - Interval sync+reconcile for the current month every `min(am_sync_freq_hours, nm_sync_freq_hours)` (default **12 h**); manual triggers `POST /api/v1/system/sync/am|nm|all` and `/api/v1/system/reconcile`.
+- **Digitally signed PDFs + Google Drive archival** (`vdecent-operations-platform/sidecar/`):
+  - The **sidecar** (a separate FastAPI service at `vdecent-operations-platform/sidecar/main.py`, internal URL `http://sidecar:8000`) generates A4 PDFs with **ReportLab** (`vdecent-operations-platform/sidecar/pdf_generator.py`): billing invoices (with PIX), payout receipts, and the pricing sheet, in en/pt-BR, timezone-aware (default `America/Sao_Paulo`).
+  - Every generated PDF is **signed in place with RSA PKCS#1 v1.5-SHA256** over the whole document, appending `%%VDECENT_DIGITAL_SIGNATURE: <base64>`; `GET …/pdf` endpoints revalidate the signature through `/api/v1/validate-signature` and **auto-re-sign** (via the sidecar) before serving if it fails.
+  - `vdecent-operations-platform/sidecar/gdrive_service.py` archives documents to Google Drive v3 (**Billing**, **Payments**, **Backups**, and **Receipts** folder trees); the backend is notified of the file IDs via `POST /api/v1/system/callback/gdrive-id` (`vdecent-operations-platform/backend/routers/system.py`).
+- **Backup** (`vdecent-operations-platform/sidecar/backup.py`) — `pg_dump` of the `ops_ledger` database, uploaded to the Drive **Backups** folder with retention enforcement (default **6** files; `backup_freq_hours` default **6**), plus restore and listing endpoints (`/api/v1/system/backup`, `/backups`, `/restore/{file_id}`).
+- **Audit log** (`vdecent-operations-platform/backend/utils/audit.py`, `vdecent-operations-platform/backend/routers/logs.py`) — every mutation is a `SystemLog` row with `level`, `event_type` (e.g. `AUTH`, `ONBOARDING`, `SYNC_AM`, `BILLING`, `PAYOUT`, `COMMISSION`, `EXPENSE`, `SETTINGS`, `BACKUP`), and a message prefixed with the acting user's identity.
+- **Public pricing PDF** (`vdecent-operations-platform/backend/routers/public.py`) — unauthenticated `GET /api/v1/public/pricing.pdf` streams a sidecar-generated PDF from current `SystemSettings` (inbound base/multipliers/SLA rates, outbound VRU price/SLA rates, commission; `Cache-Control: no-store`).
+- **System settings** (`vdecent-operations-platform/backend/routers/settings.py`) — a single `SystemSettings` row governs AM/NM API URLs + sync frequencies, backup cadence/retention, timezone, language (en/pt-BR), inbound pricing (base, multipliers, SLA rates **and** thresholds), outbound pricing (VRU price, SLA rates, commission); threshold edits are validated (`0 < partial < full ≤ 100`).
+
+### 5.3 Who Interacts with It & How
+
+- **Operators / administrators** — the web console for onboarding review, OAuth-user and role management (`vdecent-operations-platform/backend/routers/oauth_users.py`), billing/payout status changes, expense approval, reimbursements, developer financial-model setup, system settings, backup operations, and manual sync/reconcile triggers. Access is role-gated (operator vs global-admin).
+- **App developers (APP_OWNER) & node partners (NODE_PARTNER)** — self-register through the public `/join/app-developer` and `/join/node-partner` portals (Google/GitHub), wait for operator approval, then sign in through SSO to view their billing orders or payout receipts and download signed PDFs; app owners pay via PIX and may attach expense receipts.
+- **App Manager & Node Manager** — consume SSO: they validate Ops-issued RS256 tokens and resolve roles (`GLOBAL_ADMIN`, `OP_OPERATOR`, `APP_OWNER`/`AM_VIEWER`, `NODE_PARTNER`/`NM_VIEWER`, per [Section 4.2](#42-capabilities-offered)/[Section 3.2](#32-capabilities-offered)); they call the internal `onboarding/accounts/verify` endpoint (shared `INTERNAL_API_TOKEN`); the Operations Platform pulls their monthly SLA exports and pushes suspend/resume calls for overdue/paid apps.
+- **Background schedulers** — the 1st-of-month reconciliation, the 16th overdue sweep, and the interval sync+reconcile run against the AM/NM APIs and the sidecar.
+- **Sidecar service** — internal consumer of the backend's callbacks; the public REST API never touches Drive or ReportLab directly.
+
+### 5.4 Key Constraints & Behaviors
+
+- **CORS is deliberately narrow** (`vdecent-operations-platform/backend/main.py`): only `GET`/`POST`, no credentials, and origins limited to the allow-list (`CORS_ALLOWED_ORIGINS` env; defaults `https://am-dev.v-decent.org`, `https://am.v-decent.org`, `https://nm-dev.v-decent.org`, `https://nm.v-decent.org`, `http://localhost:3000/3001`).
+- **Bearer-token API auth** — endpoints use `OAuth2PasswordBearer` (no cookie credentials for API calls); the PDF-embed endpoints are the single exception, accepting a Bearer header, `?token=`, or the `vdecent_session` cookie.
+- **Uniqueness per period** — one `BillingOrder` per (owner, month, year), one `PayoutReceipt` per (partner, month, year), one `DeveloperPayoutReceipt` per (group, app, month, year); duplicate reconciliation inserts are caught on `IntegrityError` and skipped with a warning.
+- **Sources of truth** — SLA snapshots and threshold locks: a period's tier thresholds are sealed on first sync so later configuration changes never retroactively alter a billed month.
+- **Mock auth must be off in production** — `ALLOW_MOCK_AUTH=1/true` is the explicit opt-in that enables `mock-…` test tokens (`backend/auth.py`); it is off by default.
+- **RS256 primary, HS256 only as dev fallback** when the RSA keys are not configured; the JWKS `kid` is `vdecent-ops-key-2026`.
+- **Break-glass is emergency-only** — restricted to `GLOBAL_ADMIN`, 4-hour session, always logged as a warning.
+- **Timezone** — `America/Sao_Paulo` governs PDF issue dates and billing periods (`SystemSettings.timezone`), with per-document `timezone`/`lang` passed to the sidecar.
+- **Sidecar is internal-only** — reachable at `http://sidecar:8000` inside the deployment; the backend talks to it for PDF generation, signature validation, file serving, and backups.
+
+### 5.5 Source References
+
+- `vdecent-operations-platform/backend/main.py` — startup, CORS, schedulers, manual sync/reconcile endpoints, token login.
+- `vdecent-operations-platform/backend/auth.py` — RS256/HS256 JWT issue+verify, Google/GitHub verification, mock-auth gate, role gates, PDF-viewer auth.
+- `vdecent-operations-platform/backend/routers/auth.py` — OAuth login URLs/callbacks, JWKS + public-key endpoints, break-glass login, session cookie.
+- `vdecent-operations-platform/backend/routers/oauth_users.py` — `VALID_ROLES`, `ROLES_IMPLIED_BY_GLOBAL_ADMIN`, OAuth-user administration.
+- `vdecent-operations-platform/backend/roles.py` — legacy-role canonicalization.
+- `vdecent-operations-platform/backend/routers/onboarding.py` — apply/review/approve/reject and `accounts/verify`.
+- `vdecent-operations-platform/backend/tasks/monthly_reconciliation.py` — AM/NM sync, threshold locking, inbound/outbound amount math, sliding-scale payouts, master commission, recurring expenses.
+- `vdecent-operations-platform/backend/utils/developer_billing.py` — referral/resale/none financial models.
+- `vdecent-operations-platform/backend/routers/billing.py` — billing orders, status transitions, AM suspend/resume, PDF serving.
+- `vdecent-operations-platform/backend/routers/payouts.py` — payout receipts, status transitions, PDF serving.
+- `vdecent-operations-platform/backend/routers/developer_partners.py` — partner tiers, financial models, developer payout receipts/disbursement.
+- `vdecent-operations-platform/backend/routers/expenses.py`, `vdecent-operations-platform/backend/routers/reimbursements.py` — expense workflow, receipts, reimbursements.
+- `vdecent-operations-platform/backend/utils/receipt_drive.py` — receipt PDF optimization, signing, Drive upload/purge, local fallback.
+- `vdecent-operations-platform/backend/utils/pdf_signature.py` — PDF signature validation with automatic re-sign.
+- `vdecent-operations-platform/backend/routers/settings.py` — system settings (pricing, sync, backup, timezone, language).
+- `vdecent-operations-platform/backend/routers/public.py` — public pricing PDF.
+- `vdecent-operations-platform/backend/utils/audit.py`, `vdecent-operations-platform/backend/routers/logs.py`, `vdecent-operations-platform/backend/routers/system.py` — audit log and system callbacks.
+- `vdecent-operations-platform/backend/models.py`, `vdecent-operations-platform/backend/schema.py` — ledger/snapshot/settings/schema and migration columns.
+- `vdecent-operations-platform/backend/utils/key_generator.py` — RSA 2048-bit key generation.
+- `vdecent-operations-platform/backend/scripts/inject_sla_snapshots.py` — SLA snapshot injection.
+- `vdecent-operations-platform/sidecar/main.py` — sidecar API (generate/validate/files/backup).
+- `vdecent-operations-platform/sidecar/pdf_generator.py` — ReportLab PDFs and RSA signatures.
+- `vdecent-operations-platform/sidecar/gdrive_service.py` — Google Drive v3 archival.
+- `vdecent-operations-platform/sidecar/backup.py` — `pg_dump` + Drive backup/restore/retention.

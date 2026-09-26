@@ -349,3 +349,54 @@ App developers run the CLI locally before deploying (`pip install -e .`, then `v
 - `vdecent-operations-platform/sidecar/pdf_generator.py` — ReportLab PDFs and RSA signatures.
 - `vdecent-operations-platform/sidecar/gdrive_service.py` — Google Drive v3 archival.
 - `vdecent-operations-platform/sidecar/backup.py` — `pg_dump` + Drive backup/restore/retention.
+
+## 6. Codex Skills
+
+### 6.1 Role in the Ecosystem
+
+`vdecent-codex-skills` is the agent skill pack for V-Decent operations: the "Codex Skills" node of the [component diagram](#12-component-relationship-diagram). It is a private GitHub repository (`luizcarloskazuyukifukaya/vdecent-codex-skills`) that distributes Markdown procedure skills — the operational knowledge AI coding agents need to inspect and safely operate the live infrastructure. The pack contains the services/endpoints/database maps for the App Manager, Node Manager and Operations Platform, the authoritative service-URL table, per-environment capability allowlists, the verified diagnosis order for ingress and runtime incidents, and the environment-isolation and safety rules that keep every action inside its target environment. Where the application repositories (Sections [3](#3-node-manager), [4](#4-app-manager), [5](#5-operations-platform)) implement the platform, `vdecent-codex-skills` encodes how to operate it: where each service lives, how to authenticate read-only, which tables hold the authoritative state, and how far a request should be traced.
+
+The pack holds **procedures and non-secret references only**. Credentials are never committed to the repository; they must already be available as environment values on the target host, so the repository can be backed up and distributed without carrying secrets.
+
+### 6.2 Capabilities Offered
+
+**Installed skills** — three skills, each distributed as a directory with a `SKILL.md` entry point plus a Codex agent manifest:
+
+- **`vdecent-support`** — the general support skill: diagnose V-Decent applications, deployments, nodes, DNS, and environment configuration across Development/PoC and Production (incidents, App Manager, Node Manager, Operations Platform, Coolify deployments, Cloudflare access, service URLs, logs, configuration checks, cross-repository investigation). It carries the authoritative service-URL table (`am-api-dev`/`am-dev`, `nm-api-dev`/`nm-dev`, `ops-dev`/`ops`, plus the shared Hermes Agent Dashboard, V-Decent Dashboard / Mission Control, and Coolify control-plane `coolify.v-decent.org`), the System Map of source checkouts (`vdecent-codex-skills/vdecent-support/SKILL.md`), the environment gate and safety rules, an 8-step workflow, access notes (credential bootstrap via `COOLIFY_API_TOKEN`, Cloudflare and Coolify access), and pointers into the four reference files below.
+- **`vdecent-ssh`** — access and operate V-Decent compute nodes `vdecent-node-N` over SSH through the configured aliases and Cloudflare Access proxy: the alias resolves to `vdecent-node-<number>.v-decent.org`, logs in as `vdecent` with `~/.ssh/vdecent-key`, and connects through `cloudflared access ssh` (`vdecent-codex-skills/vdecent-ssh/SKILL.md`). It provides bounded non-interactive connection patterns (`BatchMode=yes`, `ConnectTimeout=10`) and a read-only-first inspection posture.
+- **`vdecentserver0-ssh`** — access and safely operate the core management host `vdecentserver0` (remote user `kfukaya`), where Coolify and the manager services run, including the "protect the active control connection" rules around the local `cloudflared` service that carries the live session (`vdecent-codex-skills/vdecentserver0-ssh/SKILL.md`).
+
+**Reference files** — four reference documents under `vdecent-support/references/` back the support skill:
+
+- `core-services.md` — per-service maps for the App Manager, Node Manager and Operations Platform: data ownership, lookup order, authentication, primary read endpoints, and database schemas; cross-service support paths for application / node / billing incidents; and the network-and-ingress reference (`Cloudflare DNS/HTTPS -> node cloudflared tunnel -> node Traefik -> Coolify-managed container service port`) with the verified `vdecentserver0` and enrolled-application-node ingress patterns and an 8-step ingress diagnosis order.
+- `systems.md` — environment and runtime diagnostics: environment isolation, live-container resolution by Docker Compose project/service labels, the 6-step diagnostic order, and runbooks for App Manager→Coolify creation/action failures and for correcting reversed Coolify project membership.
+- `development.md` / `production.md` — per-environment capability allowlists: the Coolify project/environment identifiers, allowed applications/infrastructure/edge/credentials/automation, forbidden actions, each environment's deployment map (Compose project IDs for Node Manager and App Manager), and the last-verified baseline.
+
+**Distribution & discovery** — the skills install by cloning the GitHub repository and copying each skill directory into `~/.codex/skills/` (or `$CODEX_HOME/skills/` when configured) for Codex, or `~/.config/opencode/skills/` for OpenCode. New sessions must be started after install so the skills are discovered; an installed skill can be validated with Codex's `quick_validate.py` script when available (`vdecent-codex-skills/README.md`).
+
+### 6.3 Who Interacts with It & How
+
+**AI coding agents** (Codex / OpenCode on the operator's machine) are the operators. Skills are invoked explicitly — "Use $vdecent-support to list the Development/PoC applications and their status", "Use $vdecentserver0-ssh to check the status of services on vdecentserver0", "Use $vdecent-ssh to inspect vdecent-node-1" — or auto-selected by the model from request context. When an environment is omitted from a `vdecent-support` request, it defaults to Development/PoC; `Local` or `Production` must be stated explicitly when that is the intended target.
+
+Credentials are held in the **target host's shell environment**, never in the repository: `COOLIFY_API_TOKEN`, `CLOUDFLARE_API_TOKEN`, `ACCOUNT_ID`, `ZONE_ID`, `VDECENT_ZONE_ID`, and per-environment `*_env_*.env` files. Everything else is read/written against the live managers' APIs. Host prerequisites are access to the private Git repository at install time and SSH access to `vdecentserver0` and enrolled nodes at runtime.
+
+### 6.4 Key Constraints & Behaviors
+
+- **Hard environment gate** — every `vdecent-support` invocation first selects exactly one of `Local` (the manager instances and databases on the current host only), Development/PoC, or Production, and operates only inside that environment's Coolify project. The Development/PoC and Production projects are separate trust domains: credentials, endpoints and references are loaded only for the selected environment, never combined or used as fallback, and a resource that cannot be resolved to the selected project is treated as out of scope — the agent must stop and ask rather than guess.
+- **Shared infrastructure is scoped, not shared** — shared components (the Cloudflare account, Docker host, Traefik, the Coolify control plane) may be queried only for resources belonging to the selected project; DNS records and CNAMEs are resolved to their associated Coolify application/project before use.
+- **Never restart `cloudflared` as a diagnostic step** — the agent's own SSH/Codex session rides the Cloudflare Tunnel served by the local `cloudflared` service; restarting it severs the live session and can lose in-flight output. A restart requires the user's explicit confirmation immediately before the action, a validated configuration, the resolved current session ID and the exact `codex resume <SESSION_ID>` recovery sequence, and must be the final action of the turn after all preparatory work is persisted.
+- **Secrets hygiene** — credentials, environment values, IDs, headers and API responses are treated as sensitive: never printed, logged, persisted into the skill/repository, or passed where they can leak into stdout/stderr/tracing/process arguments. Commands stay structured so secrets cannot appear in command arguments. SSH host-key verification is never disabled and no interactive password is ever requested or handled (`sudo -n` only; a `BatchMode` `Permission denied` is reported as a blocker).
+- **Read-only by default** — inspection precedes action; a Production mutation requires an explicit user request plus confirmation of the target environment and exact resource; destructive, irreversible or broad changes require confirmation.
+- **Reference data is dated and flagged for revalidation** — the maps carry "last verified baseline" stamps and must be revalidated against live code/APIs after deployments change and inside the target environment for each incident. Examples: the `2026-08-16` baseline found `AM_API_TOKEN` unset in App Manager, to be "reported as a security finding, not as current fact until revalidated"; the verified Coolify API contract is stamped `2026-08-22`.
+- **Identity verification before consequential work** — the SSH skills confirm the remote hostname and user match the requested target (`vdecent-node-<id>` / `remote_user=vdecent`, or `vdecentserver0` / `remote_user=kfukaya`) and treat any mismatch as a blocker.
+
+### 6.5 Source References
+
+- `vdecent-codex-skills/README.md` — pack purpose, skill inventory, distribution/installation (`~/.codex/skills/`, `~/.config/opencode/skills/`), explicit invocation examples, target prerequisites.
+- `vdecent-codex-skills/vdecent-support/SKILL.md` — environment gate rules, safety rules, system map, authoritative service-URL table, workflow steps, access notes.
+- `vdecent-codex-skills/vdecent-support/references/core-services.md` — App Manager / Node Manager / Operations Platform ownership, lookup order, authentication, primary read endpoints, database maps; cross-service support paths; network-and-ingress patterns and diagnosis order.
+- `vdecent-codex-skills/vdecent-support/references/systems.md` — environment isolation, live-container resolution, diagnostic order, Coolify action-failure and project-membership runbooks.
+- `vdecent-codex-skills/vdecent-support/references/development.md` — Development/PoC capability allowlist, deployment map, last-verified baseline.
+- `vdecent-codex-skills/vdecent-support/references/production.md` — Production capability allowlist, deployment map, last-verified baseline.
+- `vdecent-codex-skills/vdecent-ssh/SKILL.md` — compute-node SSH through Cloudflare Access proxy: aliases, bounded non-interactive connection, identity verification, safe-operation rules.
+- `vdecent-codex-skills/vdecentserver0-ssh/SKILL.md` — core management host access as `kfukaya`, `cloudflared` control-connection protection, authentication and safe-operation rules.

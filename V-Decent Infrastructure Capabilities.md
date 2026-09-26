@@ -400,3 +400,82 @@ Credentials are held in the **target host's shell environment**, never in the re
 - `vdecent-codex-skills/vdecent-support/references/production.md` — Production capability allowlist, deployment map, last-verified baseline.
 - `vdecent-codex-skills/vdecent-ssh/SKILL.md` — compute-node SSH through Cloudflare Access proxy: aliases, bounded non-interactive connection, identity verification, safe-operation rules.
 - `vdecent-codex-skills/vdecentserver0-ssh/SKILL.md` — core management host access as `kfukaya`, `cloudflared` control-connection protection, authentication and safe-operation rules.
+
+## 7. Support Skills
+
+### 7.1 Role in the Ecosystem
+
+`vdecent-support-skills` is the incident-response and operations capability for AI agents — the "Support Skills" node of the [component diagram](#12-component-relationship-diagram). It is a private GitHub repository (`luizcarloskazuyukifukaya/vdecent-support-skills`) that packages an operational support team for each public V-Decent environment: role-scoped agent profiles, an incident lifecycle with a hard environment gate, mandatory API wrapper scripts, an incident-report template, and a bug-ticket handoff to the development workflow. Where `vdecent-codex-skills` ([Section 6](#6-codex-skills)) teaches operators how to inspect the platform, this pack operates it: agents detect, diagnose, and mitigate V-Decent service incidents with the smallest safe reversible change, then verify recovery independently and produce a traceable incident report.
+
+Support is deliberately separated from source-code development. Agents operating under this pack troubleshoot and mitigate running services; they do **not** fix source defects. A confirmed defect is escalated as a bug ticket on the `vdecent-bug-backlog` Kanban board and resolved by the development workflow (a human or the `vdecent-bug-fix` skill), keeping operations hands-off from product code.
+
+Note on overlap: the separate `vdecent-codex-skills` repository also ships a skill named `vdecent-support` ([Section 6.2](#62-capabilities-offered)) — that is a single-agent procedures/reference skill for inspect-and-diagnose work. The `vdecent-support-skills` pack described here is the multi-agent, incident-lifecycle implementation with role profiles, wrapper scripts, and Kanban/Telegram interfaces.
+
+### 7.2 Capabilities Offered
+
+**Skills.** The pack defines two skills:
+
+- `vdecent-support` — the operational skill (`vdecent-support-skills/SKILL.md`): environment gate, safety rules, mandatory wrapper usage, authoritative system map and service-URL table, deployment architecture, the incident workflow, and the bug-ticketing handoff.
+- `vdecent-bug-fix` — the development handoff skill (`vdecent-support-skills/vdecent-bug-fix/SKILL.md`): retrieve tickets from `vdecent-bug-backlog`, reproduce in Development/PoC, fix, test, verify, close the ticket, and file a release/migration step. It belongs to development agents, not to support teams mid-incident.
+
+**Role profiles.** Ten persona profiles under `vdecent-support-skills/profiles/`, five per environment (Development/PoC `vdecent-dev-*`, Production `vdecent-prod-*`):
+
+- `*-coordinator` — owns triage, scope, delegation, timeline, authorization requests, and the final incident report.
+- `*-apps` — diagnoses application behavior, deployment state, and application-facing APIs.
+- `*-infra` — diagnoses nodes, Docker, Sentinel, host capacity, and service runtime.
+- `*-edge` — diagnoses Coolify, Cloudflare, DNS, tunnels, and reverse-proxy routing.
+- `*-verifier` — independently verifies evidence, recovery, and report completeness; never approves its own repair.
+
+All work is routed through the environment's Kanban board (`vdecent-support-dev` / `vdecent-support-prod`). Each profile operates only inside its Coolify project — the other environment's resources are out of scope — and the Production profiles run with empty baselines (zero inherited skills, zero default tokens, fail-closed isolation).
+
+**Incident lifecycle** (`vdecent-support-skills/SKILL.md`):
+
+1. **Environment gate** — select exactly one environment before any API call, SSH command, DNS query, or Coolify operation; default to Development/PoC only when the symptom clearly belongs there, otherwise stop and ask.
+2. Identify the affected application and resolve it through the selected environment's App Manager; use its recorded Coolify application ID to query Coolify.
+3. Inspect the relevant source repository and its `AGENTS.md` for existing patterns.
+4. **Trace** the request from application code through App Manager → Coolify → Node Manager → Cloudflare only as far as needed.
+5. Run **read-only** API checks without emitting credentials or environment values.
+6. State the root cause or evidence, propose the smallest safe change, obtain explicit scope for any mutation, apply only that change, and verify service health afterward.
+7. If a source defect is suspected, document reproduction and evidence, then escalate via bug ticketing — do not implement a code fix from support.
+8. Independent verification of recovery, then the incident report.
+
+**Incident IDs and reports.** Every incident receives `VDS-DEV-YYYYMMDD-NNNN` (Development/PoC) or `VDS-PROD-YYYYMMDD-NNNN` (Production). The template (`vdecent-support-skills/incident-template.md`) captures the environment, service, deployed commit/image/release/schema-config versions, evidence before mutation, mitigation and authorization, recovery verification, rollback information, the bug ticket ID when a defect is suspected, cross-environment applicability, and a sanitized lesson learned.
+
+**Mandatory wrapper scripts.** Coolify and App Manager are reached only through the bundled helpers (`vdecent-support-skills/scripts/coolify.py`, `vdecent-support-skills/scripts/am.py`). `coolify.py` offers `list-apps`, `list-servers`, `app-status`, `server-status`, `validate`, `deploy`, `restart`, `deployments`, and `deploy-logs`; `am.py` offers `list-apps`, `app-logs`, `deployments`, and `app` against the Development/PoC App Manager. Inline `urllib` one-liners and `curl | python3` pipes are forbidden — the shell safety scanner holds them for manual approval and they block the workflow.
+
+**Bug-ticket handoff.** The coordinator files a ticket on the `vdecent-bug-backlog` board via `hermes kanban`, referencing the source incident by task id in the body (cross-board parent links are not supported), links the ticket back on the incident card, and records the returned ticket reference (per the template, a `BUG-<ENV>-YYYYMMDD-NNNN` ID) in the incident's `bug_id` field. Support then stops acting on the bug; triage and fix are owned by the development side.
+
+**Operations modes** (`vdecent-support-skills/README.md`). Support runs in two modes: **reactive** — active — a human messages the coordinator (Telegram / Hermes Chat) or assigns a Kanban card / posts an incident; the coordinator triages, delegates role-scoped evidence collection to the specialists, obtains explicit authorization for any mitigation, and requires independent verification before closing. **Autonomous** — designed, not yet enabled — a scheduled watchdog (every 10–15 min) would probe readiness, classify anomalies against a failure taxonomy, raise role-scoped incident cards, auto-repair only pre-authorized reversible classes (restart, redeploy, scale, DNS update) with rollback evidence, escalate everything else (`approvalRequired=true`), and verify + report. As of the source's status, no scheduler job, cron, or systemd timer drives the watchdog; it stays dormant until reactive operation is confirmed.
+
+### 7.3 Who Interacts with It & How
+
+**Support agents** — the coordinator plus apps/infra/edge/verifier specialist profiles per environment — work incident cards on the `vdecent-support-dev` / `vdecent-support-prod` boards. A human engages the team through:
+
+- **Telegram** — DM the coordinator bot (one per board, owner chat whitelisted in the coordinator's `config.yaml`); the coordinator triages in chat, delegates to specialists, and reports back.
+- **Hermes Chat** — the gateway chat bound to the coordinator profile, reachable through the dashboard's chat panel or a messaging platform bound to that profile.
+- **Dashboard / Mission Control** — `dashboard.v-decent.org` (support page plus the incident-ingestion API at `/api/hermes/support/incidents`) and the Hermes Agent Dashboard at `hermes.v-decent.org` (sessions, plugins, Kanban boards).
+- **Kanban board** — cards created directly on either board are dispatched to the owning coordinator, which triggers reactive work.
+- **Command line / OpenCode harness** — `hermes kanban` commands on the gateway container; this is the programmatic path used to trigger reactive work.
+
+**Development agents and humans** consume the pack's output through the bug backlog: they take `vdecent-bug-backlog` tickets filed by support, work the fix in Development/PoC, and hand it to the release process via the `vdecent-bug-fix` skill. **Operators / the repository owner** authorize Production exercises and explicit mitigations; Production cutover proceeded through staged authorization requests and a read-only acceptance exercise.
+
+### 7.4 Key Constraints & Behaviors
+
+- **Hard environment gate** — Development/PoC (`V-Decent Project Development`, project UUID `htb5fvtz30yyj3kmkgpy0e48`, environment `t13h0s3x0c342r4m2u2sg5tg`) and Production (`V-Decent Project Production`, project UUID `rt43u6zclfay6zx1k5p0ct26`, environment `pq3z6jmucnbgwg9npyq0pbxv`) are separate trust domains. Credentials, endpoints, and references are loaded only for the selected environment, never combined or fallen back on across environments; shared infrastructure (Cloudflare, Docker host, Traefik, Coolify control plane) is queried only for resources belonging to the selected project; unresolved scope means stop and ask.
+- **Read-only by default with pre-authorized reversible mutation classes** — inspection precedes mutation, and a mutation requires explicit authorization plus confirmation of the target environment and exact resource. Mitigations follow the "smallest safe reversible mitigation" policy — restart, roll back/redeploy, correct routing/configuration, adjust capacity, fail over — confined to the selected Coolify project, with rollback evidence preserved and independent verification. `production.interactive_shell.open` is an explicit denial.
+- **Stop after 3 failed attempts** — after three failed mitigation attempts the team stops and invokes the human/operator instead of escalating blind retries.
+- **Never restart `cloudflared` as a diagnostic step** — a tunnel restart can sever the active SSH/Codex control channel; it requires explicit authorization and a validated recovery path.
+- **Support never fixes source defects** — suspected defects are escalated as `vdecent-bug-backlog` tickets; once filed, support stops redeploying or patching around the bug and leaves triage and fix to the development workflow.
+- **Secrets hygiene** — credentials, environment values, IDs, headers, and API responses are treated as sensitive: report presence/validity/access only, never values; commands stay structured so secrets cannot reach stdout/stderr/tracing/process arguments; credentials come from the host shell environment, not the repository.
+- **Reactive mode active, autonomous designed-not-enabled** — as of the source status only reactive operation runs; the autonomous watchdog is designed, scripted, and validated in staging but has no scheduled jobs.
+- **Production onboarded through staged validation** — the Production realization plan's stages (authorization, security review, negative-control denial, read-only exercise) all passed and certified Production **P0 read-only** (2026-08-20); Production mutations remain project-scoped and authorization-gated, and cross-environment access remains forbidden.
+
+### 7.5 Source References
+
+- `vdecent-support-skills/README.md` — mission, profile tables, incident contract, human interfaces, operations model (reactive active / autonomous designed), Production realization status.
+- `vdecent-support-skills/SKILL.md` — `vdecent-support` skill: environment gate, safety rules, mandatory wrapper usage, system map, authoritative service URLs, deployment architecture, incident workflow, bug-ticketing process, access notes.
+- `vdecent-support-skills/vdecent-bug-fix/SKILL.md` — `vdecent-bug-fix` skill: ticket retrieval, reproduce-fix-test-verify in Development/PoC, ticket closure and release handoff.
+- `vdecent-support-skills/profiles/` — the ten role profiles (`vdecent-dev-*`, `vdecent-prod-*`), each scoping its owner to one Coolify project; the verifier never approves its own repair.
+- `vdecent-support-skills/scripts/coolify.py` — mandatory Coolify API wrapper (read-only subcommands plus `deploy`/`restart`).
+- `vdecent-support-skills/scripts/am.py` — mandatory App Manager (Development/PoC) API wrapper.
+- `vdecent-support-skills/incident-template.md` — incident ID scheme, report fields, bug-ticket handoff section.

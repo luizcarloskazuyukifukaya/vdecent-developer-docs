@@ -272,6 +272,72 @@ Use this as the baseline structure. Notice that all custom network sections are 
 
 ## ---
 
+**V-Decent Application Sizing (Hosting Tier)**
+
+V-Decent does not require you to choose hardware. Applications are classified into standardized hosting tiers (S, M, L, XL) using a deterministic score, the **V-Decent Resource Unit (VRU)**. You must produce a sizing recommendation so the application can be registered at the correct size in V-Decent Application Manager.
+
+### How sizing works
+
+- The baseline reference "S" application uses 0.2 vCPU, 512 MB RAM, and 5 GB storage. A minimum node (4 vCPU / 8 GB RAM / 125 GB) hosts up to 16 S apps; **RAM is the strict capacity ceiling** (scheduling overcommit is capped at +10%).
+- The officially measured path is the `vdecent-size` CLI profiler (github.com/luizcarloskazuyukifukaya/vdecent-app-sizing). It profiles a running local Docker Compose stack and exports `vdecent-size.json` with the determined tier and per-service resource recommendations. When it is available, profile a **representative workload** — idle startup measurements are not sufficient. Do not treat the tool as a runtime dependency; an estimate is acceptable when it is absent.
+
+### VRU formula
+
+VRU = 0.3 × (Avg CPU vCPUs / 0.2) + 0.7 × (Avg RAM GB / 0.5) + Storage Penalty  
+Storage Penalty = max(0, (Actual Storage GB − Tier Fair-Share Storage) / 25)
+
+### Hosting tiers
+
+| Tier | VRU range | CPU reference | RAM reference | Fair-share storage | Per-service limit mapping |
+|---|---|---|---|---|---|
+| **S** | 0.0 ≤ VRU ≤ 1.2 | 0.2 vCPU | 512 MB | 5 GB | cpus 0.2, mem_limit 512m |
+| **M** | 1.2 < VRU ≤ 2.4 | 0.4 vCPU | 1024 MB | 10 GB | cpus 0.4, mem_limit 1024m |
+| **L** | 2.4 < VRU ≤ 4.8 | 0.8 vCPU | 2048 MB | 20 GB | cpus 0.8, mem_limit 2048m |
+| **XL** | VRU > 4.8 | 1.6+ vCPU | 4096+ MB | Custom | cpus 1.6+, mem_limit 4096m+ |
+
+### Translating the tier into docker-compose.yaml
+
+Encode the tier as per-service resource constraints so the stack cannot overflow the node. In the production docker-compose.yaml add for each service:
+
+`  app:`      
+`    cpus: 0.4`      
+`    mem_limit: 1024m`      
+`    memswap_limit: 0m`      
+`    mem_swappiness: 0`
+
+These map to App Manager registration (Coolify `limits_cpus` / `limits_memory`), so they must match the tier you report. Rules:
+
+- Set `memswap_limit` to 0 and `mem_swappiness` to 0. Swap would mask memory pressure and break the RAM-based VRU measurement.
+- Apply limits per service, distributing the tier across services. Never copy the full application limit onto every service.
+- Storage fair-share is enforced by telemetry (Storage Penalty), not by Docker limits — do not fabricate disk quotas.
+
+### Automating sizing with the vdecent-size CLI (workflow)
+
+Derive the size from the running app instead of guessing. Integrate the `vdecent-size` profiler into the local development flow so the developer gets a concrete tier and ready-to-paste compose limits for free:
+
+1. Make the tool available in the dev environment (dev-only, never a runtime dependency): install it in the project's local environment, e.g.
+   `git clone https://github.com/luizcarloskazuyukifukaya/vdecent-app-sizing`  
+   `pip install -e <repo>/` (or add it to dev requirements)  
+   Document this under **Local Development Setup** in the README.
+2. After `launch-local.sh` has the full stack up, drive a representative workload, then run the profiler against the running project:
+   `vdecent-size profile --duration <MINUTES> --project-name <PROJECT_NAME>`  
+   (`--project-name` is the recommended mode for an already-running stack; fall back to `--compose-file docker-compose.dev.yaml` if it is not available.)
+3. Read the report: the CLI prints the deterministic size (S/M/L/XL) and exports `vdecent-size.json` with a per-service `compose_recommendation` block containing ready-to-copy `cpus`, `mem_limit`, `memswap_limit`, `mem_swappiness` values.
+4. Apply the recommendation to the production manifest: copy each service's `compose_recommendation` into the matching service in `docker-compose.yaml`, then run `validate-vdecent-compat.sh`. Never assign the full application limit to every service.
+5. Record the tier and assumptions in `docs/vdecent-handover.md` together with the command used, so the sizing can be re-measured later (see "Your task").
+
+Prerequisites: running Docker daemon, healthy stack, representative workload. Idle startup telemetry is insufficient. If the tool is unavailable, fall back to the estimate described under "Your task" and note that the size is estimated.
+
+### Your task
+
+Estimate (or profile) the application's resource footprint and, in `docs/vdecent-handover.md`:
+
+1. State the recommended hosting tier (S/M/L/XL) and the VRU estimate behind it.
+2. Provide the per-service resource limit block to paste into the production `docker-compose.yaml`.
+3. State the sizing assumptions. Local profiling reflects minimums — production usage often requires a larger tier, so note when to re-evaluate.
+
+## ---
+
 **Required Repository Structure**
 
 `.`    
@@ -316,4 +382,5 @@ Use this as the baseline structure. Notice that all custom network sections are 
 \[ \] `docker-compose.dev.yaml` exists for local development volume mounts and debug entrypoint.  
 \[ \] `launch-local.sh` detects available ports, syncs `.env`, and starts compose with both `-f` files.  
 \[ \] `validate-vdecent-compat.sh` exists, is executable, and passes against `docker-compose.yaml` alone (no networks:, no ports:).  
-\[ \] A runtime smoke test of `docker-compose.yaml` with **no override files** confirms `/health` responds via `docker compose exec` — not just via the local port override.
+\[ \] A runtime smoke test of `docker-compose.yaml` with **no override files** confirms `/health` responds via `docker compose exec` — not just via the local port override.  
+\[ \] `docs/vdecent-handover.md` states the recommended hosting tier (S/M/L/XL) and per-service resource limits (`cpus`, `mem_limit`, `memswap_limit`, `mem_swappiness`).

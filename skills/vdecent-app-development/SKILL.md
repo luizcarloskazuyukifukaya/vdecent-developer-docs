@@ -70,9 +70,15 @@ present in the base manifest.
    Variables** when registering the app for deployment on V-Decent, so
    Coolify injects them into the running container.
 6. **Pre-registration validation (required before stating done):**
-   - Run `validate-vdecent-compat.sh` against `docker-compose.yaml` **alone**
-     — it must pass (no `ports:`, no `networks:`).
-   - Smoke-test the production manifest with **no override files**:
+- Run `validate-vdecent-compat.sh` against `docker-compose.yaml` **alone**
+      — it must pass (no `ports:`, no `networks:`).
+      Note: some Docker Compose versions (e.g. 5.x) inject the implicit
+      `default` network into `docker compose config` output even on a
+      compliant manifest. If the validation rejects a `networks:` key that
+      was never declared, strip/ignore the injected `default` key before
+      checking — the manifest fails only if a network is explicitly
+      declared or any `ports:` mapping survives.
+    - Smoke-test the production manifest with **no override files**:
      `docker compose -f docker-compose.yaml up -d --build`, then
      `docker compose -f docker-compose.yaml exec <public-service> curl -f http://localhost:<PORT>/health`.
      Tear down afterward.

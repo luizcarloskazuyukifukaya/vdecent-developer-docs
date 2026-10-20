@@ -20,6 +20,14 @@ A comprehensive manual covering:
 **File:** `v-decent-ai-agent-project-prompt_V3_2.md`
 A pre-configured prompt template for AI coding agents (Gemini, Claude, Cursor, etc.). Using this prompt ensures your project structure and configuration are V-Decent compatible from the start. It includes the non-negotiable rules, a required pre-registration validation script, and an acceptance-criteria checklist the agent must satisfy before you register the app.
 
+### 3. V-Decent App Development Skill
+**Directory:** `skills/vdecent-app-development/`
+A harness-agnostic AI agent skill distilled from the V3_2 prompt. Loads in
+any skill-capable harness (Google Antigravity, Codex, OpenCode, Claude Code,
+Gemini CLI, Copilot, and similar) to enforce V-Decent App Manager
+compatibility while building. Install per
+`skills/vdecent-app-development/INSTALL.md`.
+
 ## How to Use the AI Agent Prompt (Prompt Engineering Guide)
 
 This document is written to be pasted whole, not summarized. It is designed as a **system/briefing prompt** — the Non-Negotiable Rules, the rationalization tables, and the validation steps only work if the agent sees the exact wording, not your paraphrase of it. Summarizing it defeats the purpose: the rules exist specifically because agents rationalize their way past a plain instruction, and a summary strips the counter-argument that stops that.

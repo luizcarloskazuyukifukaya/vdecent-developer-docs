@@ -18,7 +18,7 @@ Installing there covers most tools at once.
 ln -s "$PWD/skills/vdecent-app-development" ~/.agents/skills/vdecent-app-development
 ```
 
-Prefer a copy if symlinks are unreliable on your platform:
+Prefer a copy if symlinks across filesystems are unreliable on your platform:
 
 ```bash
 cp -r skills/vdecent-app-development ~/.agents/skills/

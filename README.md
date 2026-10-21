@@ -51,6 +51,23 @@ Agents drift over long sessions, especially once other frameworks' conventions (
 
 You can also re-paste just the relevant rule section (e.g. Non-Negotiable Rules, or the Local Development Setup section) when asking an agent to modify an existing app, instead of the whole document — useful for smaller, targeted changes where a full re-briefing is overkill.
 
+## How to Use the App Development Skill (Skill Guide)
+
+The **V-Decent App Development Skill** is the reusable form of the same rules: instead of pasting the prompt every time, you install the skill once and your AI agent loads it automatically whenever the task matches (building/scaffolding/updating an app that deploys through V-Decent). It contains the same Non-Negotiable Rules, the required repository structure, the pre-registration validation steps, and the acceptance checklist — distilled from the V3_2 prompt, with the full V3_2 text kept as the authoritative reference inside the skill.
+
+### Installing the skill
+
+Follow **`skills/vdecent-app-development/INSTALL.md`** — it covers cloning the repository, the recommended cross-harness location (`~/.agents/skills/`), and per-harness placement (Claude Code, Codex, Gemini CLI, Copilot CLI, OpenCode, Google Antigravity), with step-by-step instructions for Git beginners. A Brazilian-Portuguese (pt-BR) version is included in the same file.
+
+Then restart/reload your agent so it picks up the newly installed skill.
+
+### Using the skill
+
+- **Starting a new project:** just ask your agent to build a V-Decent application (e.g. "create a Flask app for V-Decent"). The agent should read `SKILL.md` and its reference, collect the App Manager form fields, select and state the Application Pattern (A/B/C), scaffold the required structure, and generate the local development + validation files.
+- **Check compliance:** the skill's workflow ends in pre-registration validation (run `validate-vdecent-compat.sh` against `docker-compose.yaml` alone, plus a no-override-files `/health` smoke test) and an Acceptance Criteria checklist. Ask the agent to report each box with evidence — not a verbal "done."
+- **Updating an existing V-Decent app:** the same skill applies when asked to modify or fix an existing app's compatibility (e.g. "fix this docker-compose.yaml so it deploys on V-Decent").
+- **If a skill isn't loaded:** fall back to the prompt by pasting the whole `v-decent-ai-agent-project-prompt_V3_2.md` as described above.
+
 ## V-Decent Compatibility Summary
 
 - **Docker Compose:** Mandatory `docker-compose.yaml` at root.

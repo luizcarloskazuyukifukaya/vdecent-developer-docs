@@ -10,6 +10,51 @@ Commands below run from the repository root; the skill directory is
 Symlinking is recommended over copying so `git pull` keeps the skill
 up to date.
 
+## Getting the repository (clone)
+
+These instructions assume you have never used Git or a "terminal/command
+prompt" before. The goal of this step is to download a full copy (a
+"clone") of this GitHub repository onto your computer so the
+`skills/vdecent-app-development/` folder exists locally. All the later
+commands in this file assume this folder is already on your machine.
+
+1. Open a terminal:
+   - **Linux/macOS:** open the "Terminal" app.
+   - **Windows:** open "PowerShell" or "Command Prompt".
+2. Pick a folder on your computer where the repository will live (for
+   example, your home folder or a `projects/` folder). Go to it by typing:
+   ```bash
+   cd ~
+   ```
+   (`~` is a shortcut for your home folder; press `Enter` after typing.)
+3. Make sure Git is installed. If it is not, your terminal will show a
+   message like `git: command not found` — then install Git from
+   https://git-scm.com/downloads and open a new terminal window.
+4. Download the repository with this command (replace
+   `vdecent-developer-docs` with the actual repository name if you were given
+   a fork):
+   ```bash
+   git clone https://github.com/luizcarloskazuyukifukaya/vdecent-developer-docs.git
+   ```
+   After it finishes, a new folder called `vdecent-developer-docs/` appears in
+   your current directory.
+5. Move into the folder:
+   ```bash
+   cd vdecent-developer-docs
+   ```
+6. Confirm the skill folder exists:
+   ```bash
+   ls skills/vdecent-app-development/SKILL.md
+   ```
+   If you see `skills/vdecent-app-development/SKILL.md` listed (or no error),
+   you have the files. From now on, "run from the repository root" below
+   means running commands while you are inside this `vdecent-developer-docs`
+   folder — the same folder you are in after step 5.
+
+> **Getting updates later:** because you cloned, you can later download the
+> newest version of the files from inside this folder with `git pull`. See
+> the [Updating](#updating) section below.
+
 ## Recommended: cross-harness location
 
 `~/.agents/skills/` is the cross-runtime alias shared by Codex CLI, Gemini
@@ -75,6 +120,52 @@ diretório da skill é `skills/vdecent-app-development`.
 
 Recomenda-se usar symlink em vez de cópia, assim o `git pull` mantém a skill
 atualizada.
+
+## Obtendo o repositório (clone)
+
+Estas instruções assumem que você nunca usou Git ou um "terminal/prompt de
+comando" antes. O objetivo deste passo é baixar uma cópia completa (um
+"clone") deste repositório do GitHub para o seu computador, para que a pasta
+`skills/vdecent-app-development/` exista localmente. Todos os comandos nas
+seções seguintes presumem que essa pasta já está na sua máquina.
+
+1. Abra um terminal:
+   - **Linux/macOS:** abra o aplicativo "Terminal".
+   - **Windows:** abra o "PowerShell" ou o "Prompt de Comando".
+2. Escolha uma pasta do computador onde o repositório ficará (por exemplo, sua
+   pasta pessoal ou uma pasta `projects/`). Vá até ela digitando:
+   ```bash
+   cd ~
+   ```
+   (`~` é um atalho para a sua pasta pessoal; pressione `Enter` depois de
+   digitar.)
+3. Verifique se o Git está instalado. Se não estiver, o terminal mostrará uma
+   mensagem como `git: command not found` — então instale o Git em
+   https://git-scm.com/downloads e abra uma nova janela de terminal.
+4. Baixe o repositório com este comando (troque `vdecent-developer-docs`
+   pelo nome real do repositório, se você recebeu um fork):
+   ```bash
+   git clone https://github.com/luizcarloskazuyukifukaya/vdecent-developer-docs.git
+   ```
+   Ao terminar, uma pasta nova chamada `vdecent-developer-docs/` aparece no
+   seu diretório atual.
+5. Entre na pasta:
+   ```bash
+   cd vdecent-developer-docs
+   ```
+6. Confirme que a pasta da skill existe:
+   ```bash
+   ls skills/vdecent-app-development/SKILL.md
+   ```
+   Se aparecer `skills/vdecent-app-development/SKILL.md` (ou nenhum erro),
+   os arquivos estão com você. Daqui em diante, "executar a partir da raiz do
+   repositório" abaixo significa executar comandos dentro desta pasta
+   `vdecent-developer-docs` — a mesma pasta em que você está depois do passo
+   5.
+
+> **Recebendo atualizações depois:** como você clonou, poderá baixar a
+> versão mais nova dos arquivos depois, de dentro desta pasta, com `git
+> pull`. Veja a seção [Atualização](#atualização) abaixo.
 
 ## Local recomendado: caminho compartilhado entre harnesses
 

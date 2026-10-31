@@ -28,14 +28,13 @@ Gemini CLI, Copilot, and similar) to enforce V-Decent App Manager
 compatibility while building. Install per
 `skills/vdecent-app-development/INSTALL.md`.
 
-### 4. V-Decent App Deployment Skill
-**Directory:** `skills/vdecent-app-deployment/`
-A harness-agnostic AI agent skill for **registering and deploying** a
-ready-to-deploy application through V-Decent App Manager (Coolify). It
-collects the required registration inputs from the developer, registers the
-application via the App Manager API, copies the `.env` environment variables
-into the app, triggers the deployment, and verifies the public URL. Install
-per `skills/vdecent-app-deployment/INSTALL.md`.
+### 4. App Manager Registration & Deployment Guide
+**File:** `docs/app-manager-registration-guide.md`
+A developer-facing guide explaining how to register and deploy an app through
+the V-Decent App Manager: the required inputs (repository, developer group,
+shortname, target URL, GitHub account, `.env` content), how environment
+variables are injected, what happens during registration/deployment, and how
+to verify the public site.
 
 ## How to Use the AI Agent Prompt (Prompt Engineering Guide)
 
@@ -77,17 +76,14 @@ Then restart/reload your agent so it picks up the newly installed skill.
 - **Updating an existing V-Decent app:** the same skill applies when asked to modify or fix an existing app's compatibility (e.g. "fix this docker-compose.yaml so it deploys on V-Decent").
 - **If a skill isn't loaded:** fall back to the prompt by pasting the whole `v-decent-ai-agent-project-prompt_V3_2.md` as described above.
 
-## Registering & Deploying via App Manager (App Deployment Skill Guide)
+## Registering & Deploying Your App in App Manager
 
 Once the app is built, validated (`validate-vdecent-compat.sh` + the
-no-override `/health` smoke test), and pushed to its Git repository, use the
-**vdecent-app-deployment** skill to register it with the V-Decent App
-Manager and deploy it.
+no-override `/health` smoke test), and pushed to its Git repository, the
+developer registers and deploys it through the V-Decent App Manager.
 
-Install and use it exactly like the development skill (`skills/
-vdecent-app-deployment/INSTALL.md`). The skill loads in any skill-capable
-harness and walks the agent through the full registration, so a developer
-only needs to supply:
+**Read `docs/app-manager-registration-guide.md`** for the developer-facing
+steps. In short, the developer must supply:
 
 1. **Project directory (local path) or GitHub repository URL** — the source
    of the `docker-compose.yaml`.
@@ -98,26 +94,15 @@ only needs to supply:
 4. **Target URL** — defaults to `https://<shortname>.v-decent.org`.
 5. **GitHub account** that owns the repository.
 6. **`.env` content** — read from the repository `.env`/`.env.example` when
-   present; otherwise supplied by the developer. The local-only variables
-   (marked `# ponytail: local dev only`) are excluded from production.
+   present; otherwise supplied by the developer. Local-only variables (marked
+   `# ponytail: local dev only`) are excluded from production.
 
-### What the skill does
-
-- Resolves the developer group to its App Manager `id`.
-- Pre-checks that the shortname is not already registered.
-- Registers the application with the exact inputs (name, size category,
-  shortname, hostname, repository, branch, developer group, GitHub account,
-  service mapping, environment variables).
-- Copies the production `.env` values into the app's **Environment
-  Variables** (local-only values excluded; secret values are never printed).
-- Triggers the deployment and verifies it until healthy: App Manager status
-  `Registered → Deploying → Running → Healthy`, Coolify container
-  `running:healthy`, and the public URL (`/health`, home page, SPA routes)
-  responding.
-
-Environment names: Development/PoC uses the `-dev` App Manager
-(`am-api-dev.v-decent.org`) and Production uses `am-api.v-decent.org`. The
-skill never mixes environments.
+The registration and deployment are then performed by the V-Decent platform
+(operators or an authorized V-Decent internal agent), which registers the
+application, copies the production environment variables into the app's
+Environment Variables, triggers the deployment, and verifies the public URL
+(`/health`, home page, SPA routes), until the app reports healthy. As a
+developer, verify the result at the public URL after it is deployed.
 
 ## V-Decent Compatibility Summary
 

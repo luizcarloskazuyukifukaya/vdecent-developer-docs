@@ -28,6 +28,15 @@ Gemini CLI, Copilot, and similar) to enforce V-Decent App Manager
 compatibility while building. Install per
 `skills/vdecent-app-development/INSTALL.md`.
 
+### 4. V-Decent App Deployment Skill
+**Directory:** `skills/vdecent-app-deployment/`
+A harness-agnostic AI agent skill for **registering and deploying** a
+ready-to-deploy application through V-Decent App Manager (Coolify). It
+collects the required registration inputs from the developer, registers the
+application via the App Manager API, copies the `.env` environment variables
+into the app, triggers the deployment, and verifies the public URL. Install
+per `skills/vdecent-app-deployment/INSTALL.md`.
+
 ## How to Use the AI Agent Prompt (Prompt Engineering Guide)
 
 This document is written to be pasted whole, not summarized. It is designed as a **system/briefing prompt** — the Non-Negotiable Rules, the rationalization tables, and the validation steps only work if the agent sees the exact wording, not your paraphrase of it. Summarizing it defeats the purpose: the rules exist specifically because agents rationalize their way past a plain instruction, and a summary strips the counter-argument that stops that.
@@ -67,6 +76,48 @@ Then restart/reload your agent so it picks up the newly installed skill.
 - **Check compliance:** the skill's workflow ends in pre-registration validation (run `validate-vdecent-compat.sh` against `docker-compose.yaml` alone, plus a no-override-files `/health` smoke test) and an Acceptance Criteria checklist. Ask the agent to report each box with evidence — not a verbal "done."
 - **Updating an existing V-Decent app:** the same skill applies when asked to modify or fix an existing app's compatibility (e.g. "fix this docker-compose.yaml so it deploys on V-Decent").
 - **If a skill isn't loaded:** fall back to the prompt by pasting the whole `v-decent-ai-agent-project-prompt_V3_2.md` as described above.
+
+## Registering & Deploying via App Manager (App Deployment Skill Guide)
+
+Once the app is built, validated (`validate-vdecent-compat.sh` + the
+no-override `/health` smoke test), and pushed to its Git repository, use the
+**vdecent-app-deployment** skill to register it with the V-Decent App
+Manager and deploy it.
+
+Install and use it exactly like the development skill (`skills/
+vdecent-app-deployment/INSTALL.md`). The skill loads in any skill-capable
+harness and walks the agent through the full registration, so a developer
+only needs to supply:
+
+1. **Project directory (local path) or GitHub repository URL** — the source
+   of the `docker-compose.yaml`.
+2. **Developer Group name** — the V-Decent developer group that owns the app
+   (e.g. "Sao Paulo Developers").
+3. **App shortname** — becomes the subdomain (e.g. `alvoarte` →
+   `https://alvoarte.v-decent.org`).
+4. **Target URL** — defaults to `https://<shortname>.v-decent.org`.
+5. **GitHub account** that owns the repository.
+6. **`.env` content** — read from the repository `.env`/`.env.example` when
+   present; otherwise supplied by the developer. The local-only variables
+   (marked `# ponytail: local dev only`) are excluded from production.
+
+### What the skill does
+
+- Resolves the developer group to its App Manager `id`.
+- Pre-checks that the shortname is not already registered.
+- Registers the application with the exact inputs (name, size category,
+  shortname, hostname, repository, branch, developer group, GitHub account,
+  service mapping, environment variables).
+- Copies the production `.env` values into the app's **Environment
+  Variables** (local-only values excluded; secret values are never printed).
+- Triggers the deployment and verifies it until healthy: App Manager status
+  `Registered → Deploying → Running → Healthy`, Coolify container
+  `running:healthy`, and the public URL (`/health`, home page, SPA routes)
+  responding.
+
+Environment names: Development/PoC uses the `-dev` App Manager
+(`am-api-dev.v-decent.org`) and Production uses `am-api.v-decent.org`. The
+skill never mixes environments.
 
 ## V-Decent Compatibility Summary
 

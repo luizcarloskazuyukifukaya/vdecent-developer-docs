@@ -68,7 +68,12 @@ present in the base manifest.
 5. **App Manager registration — instruction to the developer:** the app's
    `.env` content must be copied into the AM app's **Environment
    Variables** when registering the app for deployment on V-Decent, so
-   Coolify injects them into the running container.
+   Coolify injects them into the running container. Run the actual
+   registration and deployment with the **`vdecent-app-deployment`**
+   skill (`skills/vdecent-app-deployment/`), which collects the required
+   inputs (repository, developer group, shortname, target URL, GitHub
+   account, `.env` content), registers the application via the App Manager
+   API, copies the environment variables, and verifies the public URL.
 6. **Pre-registration validation (required before stating done):**
 - Run `validate-vdecent-compat.sh` against `docker-compose.yaml` **alone**
       — it must pass (no `ports:`, no `networks:`).

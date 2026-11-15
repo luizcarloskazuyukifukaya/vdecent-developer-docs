@@ -78,8 +78,20 @@ Variables** so they are injected into the running container:
 - Verify yourself once it is healthy: open `https://<shortname>.v-decent.org`,
   check the `/health` endpoint, and test the pages/routes.
 - To update the app, push changes to the tracked branch and request a
-  redeploy (or the configured auto-deploy will pick it up).
+  redeploy (or the configured auto-deploy will pick it up). A redeploy rebuilds
+  the app on its current node; it is not moved to a "better" node for load
+  balancing.
 - The shortname is unique per environment — a second app cannot reuse it.
+
+## If the hosting node goes offline
+
+If an app's node stays offline past the platform's grace period (300 s by
+default), the App Manager recreates the app on another eligible online node and
+moves its public URL there; the old runtime is cleaned up once the replacement
+is healthy and the old node is reachable again. This failover recreates
+containers and routing only — it does **not** copy node-local Docker volumes or
+bind-mounted data. Keep persistent data in external storage or maintain your own
+backup and restore procedure if the app must survive a node replacement.
 
 ## Common questions
 

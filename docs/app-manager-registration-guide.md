@@ -41,6 +41,9 @@ platform will ask for it — do not skip or guess.
 | **Repository visibility, branch, GitHub account** | `Public` or `Private`, the deployment branch (e.g. `main`), and the owning GitHub account. |
 | **Developer Group** | The V-Decent developer group the app belongs to (e.g. "Sao Paulo Developers"). The platform resolves it on your behalf. |
 | **Environment variables** | The `.env` content (or where to find it). See below. |
+| **Email support** | Whether the app needs an email address (`email_enabled`). |
+| **Owner inbox** | The private email that receives replies; must be verified. |
+| **Email display name** | Name shown to recipients, defaulting to the app name. |
 
 ## Environment Variables
 
@@ -55,6 +58,23 @@ Variables** so they are injected into the running container:
 - Keep secrets out of the repository: only the production values you hand over
   (or values already present in the environment) are used. Never commit real
   secrets to the repository or paste them where they can be recorded.
+
+## Email address
+
+If the app sends or receives email, the platform registers an email identity
+for it. The default address is `contact-<shortname>@<app-domain>`, e.g.
+`contact-alvoarte@alvoarte.v-decent.org`, with the local part following the
+lowercase/dot/underscore/hyphen policy and avoiding reserved names.
+
+- You may change the local part on the existing app domain while it is free
+  and not reserved.
+- Any domain change, an address outside the app domain, or a custom domain
+  requires V-Decent operator approval (custom domains also need DNS
+  verification).
+- The owner inbox that receives replies must be verified.
+
+See `docs/app-email-guide.md` for the environment variables, the send API, and
+the optional app-owned inbox contract.
 
 ## What happens when you register and deploy
 

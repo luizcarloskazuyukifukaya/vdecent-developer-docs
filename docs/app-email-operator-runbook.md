@@ -58,8 +58,10 @@ approval before execution. The approval record must contain:
 
 A local-part change on the existing app domain is allowed without domain
 approval when the new local part is free, not reserved, and the identity is not
-suspended. It still needs re-verification and an audit entry. Pause and escalate
-if ownership, delegation, or the approval record is ambiguous.
+suspended. App Manager resets the identity to `pending_destination`, so it still
+needs operator reconciliation, re-verification, and activation plus an audit
+entry. Pause and escalate if ownership, delegation, or the approval record is
+ambiguous.
 
 ## 2. Create or verify the identity
 
@@ -76,7 +78,7 @@ All paths below are under `/api/v1` and require an ops-admin session.
 | `POST` | `/app-mail/identities` | Create identity | `app_name`, `address`, `display_name`, `owner_inbox`, optional `quota_per_minute` (default 60), optional `quota_per_day` (default 1000) |
 | `GET` | `/app-mail/identities` | List identities | — |
 | `POST` | `/app-mail/identities/{id}/rotate` | Rotate both credentials | — |
-| `PATCH` | `/app-mail/identities/{id}` | Change status | `status`: `pending_destination`, `active`, `suspended`, or `inactive` |
+| `PATCH` | `/app-mail/identities/{id}` | Change status | `status`: `pending_destination`, `pending_domain`, `active`, `suspended`, or `inactive` |
 | `PUT` | `/app-mail/identities/{id}/inbound` | Set inbound mode | `mode`: `forward` or `webhook`; optional `webhook_url`; optional `fallback_inbox` |
 | `DELETE` | `/app-mail/identities/{id}` | Delete identity | — |
 
@@ -94,6 +96,7 @@ notifications.
 Status values are exact:
 
 - `pending_destination` — created, destination/domain not verified, cannot send.
+- `pending_domain` — custom domain awaiting approval or domain verification, cannot send.
 - `active` — verified and allowed to send through the API and SMTP.
 - `suspended` — operator hold; API and SMTP authentication fail.
 - `inactive` — retired identity retained for records.
@@ -313,7 +316,8 @@ Each identity has two independent secrets:
 - `api_token` — backend-only token for `POST /api/v1/app-mail/messages` and
   `GET /api/v1/app-mail/messages/{id}`.
 - `smtp_password` — owner send-as password for `smtp.v-decent.org`, port `587`
-  STARTTLS or `465` SSL, username equal to the app address.
+  STARTTLS, username equal to the app address. Implicit TLS on `465` is not
+  offered; it requires a future operator-provisioned implicit-TLS listener.
 
 Handover:
 
@@ -346,10 +350,11 @@ curl -sS -X POST "$MAIL_API_URL/api/v1/app-mail/identities/$IDENTITY_ID/rotate" 
 - Record the rotation, actor, and time in the audit log. Do not record the
   secret.
 
-SMTP brute force: the Notification Service adds a 1-second delay on failed SMTP
-authentication. That delay is a floor, not the primary control. Ingress rate
-limiting at the edge/proxy is the real guard against credential brute force and
-must remain enabled for the SMTP submission path.
+SMTP brute force: the Notification Service throttles failed SMTP authentication
+per peer (at most one failed attempt per second) without blocking the event
+loop. That throttle is a floor, not the primary control. Ingress rate limiting at
+the edge/proxy is the real guard against credential brute force and must remain
+enabled for the SMTP submission path.
 
 ## 9. Suspension and decommission
 
@@ -480,6 +485,13 @@ const ALLOWED_HEADERS = [
 export default {
   async email(message, env, ctx) {
     const fallbackInbox = env.APP_MAIL_FALLBACK_INBOX;
+    if (!env.APP_MAIL_WEBHOOK_URL || !env.APP_MAIL_WEBHOOK_SECRET) {
+      if (fallbackInbox) {
+        await message.forward(fallbackInbox);
+        return;
+      }
+      throw new Error("APP_MAIL_WEBHOOK_URL and APP_MAIL_WEBHOOK_SECRET are required");
+    }
     try {
       const parsed = await PostalMime.parse(message.raw);
 

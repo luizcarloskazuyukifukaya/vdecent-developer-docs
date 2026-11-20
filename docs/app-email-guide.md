@@ -100,7 +100,7 @@ Response: HTTP `202` means durably queued, not delivered. The receipt contains `
 {"id": "<message UUID>", "status": "pending", "attempts": 0, "last_error": null}
 ```
 
-Check a message with `GET /api/v1/app-mail/messages/{id}`. It returns the same receipt shape and only your own identity's messages; another identity's ID returns `404`. Statuses are `pending`, `accepted`, `muted`, or `failed`. Transient failures retry after 30, 60, 120, and 240 seconds, up to five attempts; permanent rejections fail immediately. There is no replay endpoint.
+Check a message with `GET /api/v1/app-mail/messages/{id}`. It returns the same receipt shape and only your own identity's messages; another identity's ID returns `404`. Statuses are `pending`, `accepted`, or `failed`; `muted` appears only if an operator temporarily disables the email channel. Transient failures retry after 30, 60, 120, and 240 seconds, up to five attempts; permanent rejections fail immediately. There is no replay endpoint.
 
 Idempotency: keys are unique per identity. Reusing a key with identical content returns the original receipt; reusing a key with different content returns `409`. Retry safely after timeouts with the same key.
 
@@ -111,8 +111,8 @@ Error responses:
 | `401` | Missing or invalid API token. |
 | `403` | The identity is not active (suspended or not yet verified). |
 | `409` | Idempotency key reused with different content. |
-| `413` | Attachments exceed the size limit. |
-| `422` | Invalid input, such as a bad recipient, missing body, or unsupported attachment type. |
+| `413` | Attachment payload exceeds the size limit. |
+| `422` | Invalid input, such as a bad recipient, missing body, more than three attachments, or unsupported attachment type. |
 | `429` | Per-minute or daily quota exhausted; honor `Retry-After`. |
 
 Default quotas are 60 messages per minute and 1,000 per day per identity.
@@ -124,16 +124,21 @@ The owner replies as the app address by sending through the shared submission se
 | Setting | Value |
 | --- | --- |
 | SMTP server | `smtp.v-decent.org` |
-| Port / security | `587` STARTTLS, or `465` SSL |
+| Port / security | `587` STARTTLS only |
 | Username | The app address, e.g. `contact-<shortname>@<app-domain>` |
 | Password | The per-identity SMTP credential |
 | Authentication | Required |
 | TLS | Required; plaintext submission is not exposed |
 
+Port `465` (implicit TLS) is not offered by the shared listener. Supporting it
+requires a future operator-provisioned implicit-TLS listener.
+
 Rules enforced by the server:
 
 - `MAIL FROM` and the message `From` header must match the identity address.
-- Only one recipient per message is accepted.
+- If `Reply-To` is present it must also match the identity address.
+- `Cc` and `Bcc` are rejected; send one recipient per message.
+- Subjects are 1–200 characters; HTML and text bodies are each limited to 256 KB, matching the API.
 - Accepted mail enters the same outbox and is delivered by the platform provider.
 - The credential is stored hashed, works only while the identity is `active`, and can be rotated by an operator.
 
@@ -186,7 +191,7 @@ The app sends automated mail, but the owner must configure the client that recei
 
 1. Open Account Settings for the owner's existing account.
 2. Under **Manage Identities**, add an identity with the app address and display name.
-3. Set the outgoing server (SMTP) to `smtp.v-decent.org`, port `587` with STARTTLS (or `465` with SSL), username = app address, authentication = normal password.
+3. Set the outgoing server (SMTP) to `smtp.v-decent.org`, port `587` with STARTTLS, username = app address, authentication = normal password.
 4. Set the identity's From and Reply-To to the app address.
 5. Send a test reply from the app address and confirm delivery and alignment.
 
@@ -196,7 +201,7 @@ Thunderbird works with the owner's existing inbox, so no new incoming server is 
 
 1. In Gmail, open **Settings → Accounts and Import → Send mail as**.
 2. Add the app address as another address you own.
-3. Use `smtp.v-decent.org`, port `587` STARTTLS (or `465` SSL), username = app address, password = SMTP credential.
+3. Use `smtp.v-decent.org`, port `587` STARTTLS, username = app address, password = SMTP credential.
 4. The verification code is delivered through Cloudflare to the owner inbox; enter it to finish.
 5. Set the app address as the default for replies to app mail.
 
@@ -225,7 +230,8 @@ Use a different sending inbox for inbound tests. Some providers discard a messag
 | `401` from the API | Missing, wrong, or rotated `MAIL_API_TOKEN`. | Use the current token; rotate and redeploy if lost. |
 | `403` from the API | Identity not `active` or suspended. | Wait for destination/domain verification or ask the operator to reactivate. |
 | `409` from the API | Same idempotency key with different content. | Use a new key per distinct message. |
-| `413` from the API | Attachments exceed 3 files or 5 MB total. | Reduce or split attachments. |
+| `413` from the API | Attachment payload exceeds 5 MB total. | Reduce or split attachments. |
+| `422` from the API | More than three attachments, unsupported type, or invalid field. | Reduce attachments or use an allowed type. |
 | `429` from the API | Per-minute or daily quota exhausted. | Back off using `Retry-After`. |
 | Mail not arriving in the owner inbox | Cloudflare destination not verified. | Owner confirms the destination verification email. |
 | Reply rejected by SMTP | `From` or `MAIL FROM` does not match the identity, or more than one recipient. | Send as the app address to one recipient per message. |

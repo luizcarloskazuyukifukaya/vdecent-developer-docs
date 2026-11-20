@@ -467,7 +467,18 @@ App developers run the CLI locally before deploying (`pip install -e .`, then `v
 - **Payloads contain personal data**: recipient addresses and message text are stored in PostgreSQL and its backups; restrict database access and define retention/backup-restore before production use.
 - **Deployment posture**: only Development/PoC is live (with Resend); Production is routed but 503 until deployed; both environments share the vdecentserver0 tunnel, and each environment uses separate Coolify projects, token sets, and SMTP configuration.
 
-### 6.5 Source References
+### 6.5 App Email Identities
+
+On top of platform notifications, the service offers **per-app email identities**: each app can send automated mail as a real address on its own app domain (`contact-<shortname>@<app-domain>` by default) and let the owner receive and answer replies as that same address, without holding provider credentials or running a mail server.
+
+- **Identity registration** — App Manager derives and validates the address from the app shortname and selected app domain, checks reserved local parts and case-insensitive uniqueness within the domain, and stores the owner inbox and display name; any domain change or address outside the app domain requires operator approval, and an identity becomes `active` only after destination and domain verification.
+- **App-mail API** — authenticated per-identity API (`POST /api/v1/app-mail/messages`, idempotency key required) for automated mail through the shared outbox, with `From`/`Reply-To` pinned to the identity address so requests cannot override them; status is scoped to the caller's identity.
+- **SMTP send-as** — a separate credential lets the owner send as the identity from a normal mail client; the owner inbox is a routing destination only and never appears in message headers.
+- **Cloudflare forwarding** — inbound replies are forwarded to a verified owner inbox (or posted to an HTTPS webhook in webhook mode) through Cloudflare Email Routing; forwarding is not an app-owned mailbox.
+- **Optional app-owned inbox** — an app may instead run its own inbox backend, receiving mail via webhook and exposing it to its users; this is optional and owned by the app, not by the Notification Service.
+- **Guides** — developer-facing contract in `docs/app-email-guide.md`; operator provisioning, DNS, rotation, and decommission procedures in `docs/app-email-operator-runbook.md`.
+
+### 6.6 Source References
 
 - `vdecent-notification-services/backend/main.py` — FastAPI app (v0.2.0): caller auth, submission/status APIs, webhook register/list/delete, fan-out, `/settings` page + API, `/health`, startup migrations and background worker thread.
 - `vdecent-notification-services/backend/worker.py` — delivery loop: `FOR UPDATE SKIP LOCKED` claims, 30/60/120/240 s retry backoff, 5-attempt cap, permanent-failure detection, muted-channel handling.

@@ -17,8 +17,9 @@ decommissioning per-app email identities. The developer-facing contract is in
 11. [Reference Cloudflare Email Worker (Mode B)](#11-reference-cloudflare-email-worker-mode-b)
 
 Never place tokens, SMTP passwords, webhook secrets, or real provider
-credentials in this repository, tickets, chat, logs, or screenshots. Provider-
-returned DKIM public keys are public DNS data; API keys and passwords are not.
+credentials in this repository, tickets, chat, logs, or screenshots. DKIM public
+keys returned by the provider are public DNS data; API keys and passwords are
+not.
 
 ## 1. Preconditions and approvals
 
@@ -85,7 +86,7 @@ Create returns HTTP `201` with `id`, `status` (`pending_destination`),
 webhook mode, a new `webhook_secret`; forward mode returns `webhook_secret:
 null`.
 
-Create only after the address is approved and reserved. Uniqueness conflicts
+Create only after the address is approved and confirmed free. Uniqueness conflicts
 return `409`; invalid address, owner inbox, or quota values return `422`.
 `DELETE` returns `204`, or `409` while the identity still has pending
 notifications.
@@ -114,7 +115,7 @@ curl -sS "$MAIL_API_URL/api/v1/app-mail/identities" \
 ```
 
 Confirm exactly one row per app, the intended address, owner inbox, and status.
-Do not set `active` until steps 5–7 pass.
+Do not set `active` until sections 5–7 pass.
 
 ## 3. Default v-decent.org provisioning
 
@@ -335,8 +336,9 @@ curl -sS -X POST "$MAIL_API_URL/api/v1/app-mail/identities/$IDENTITY_ID/rotate" 
 
 - Rotate invalidates the previous API token and SMTP password together. There is
   no partial rotation endpoint.
-- Update the app runtime secret and redeploy before the old token stops working;
-  update the owner's mail client with the new SMTP password.
+- The old token and SMTP password stop working as soon as rotation completes.
+  Update the app runtime secret and redeploy immediately, and update the owner's
+  mail client with the new SMTP password.
 - Re-enabling webhook mode with `PUT /app-mail/identities/{id}/inbound` issues a
   new `webhook_secret`; update the Worker variable in the same change.
 - Rotate on suspected exposure, on owner change, and on the platform's scheduled
@@ -370,18 +372,7 @@ domain; use `pending_destination` when verification must be redone.
 Perform in order. Stop and escalate if any step fails.
 
 1. Suspend the identity (`status: suspended`) to stop new sends.
-2. Confirm no notifications are pending for the identity. `DELETE` returns `409`
-   until the queue drains; do not force-delete around pending mail.
-3. Revoke both credentials by deleting the identity (step 6) or by rotating and
-   discarding the new secrets if a short retention record is required.
-4. Delete the Cloudflare Email Routing custom address for the app address.
-5. Delete the owner destination if no other identity uses it.
-6. Remove Cloudflare DNS records only when the domain is not shared. On a shared
-   `v-decent.org` zone, keep the shared routing MX/SPF/DKIM and remove only the
-   app-specific custom address.
-7. Remove the domain from Resend only when no other identity uses that domain.
-   Removing a shared sending domain breaks every other app on it.
-8. Delete the identity:
+2. Revoke both credentials and remove the identity record:
 
    ```bash
    curl -sS -X DELETE "$MAIL_API_URL/api/v1/app-mail/identities/$IDENTITY_ID" \
@@ -389,12 +380,21 @@ Perform in order. Stop and escalate if any step fails.
    ```
 
    Expected `204`. The service deletes the inbound config, nulls audit identity
-   references, and retains audit rows.
-9. Remove the app's mail environment variables and redeploy so no stale token
+   references, and retains audit rows. A `409` means notifications are still
+   pending: wait for the queue to drain and retry; do not force-delete around
+   pending mail.
+3. Delete the Cloudflare Email Routing custom address for the app address.
+4. Delete the owner destination if no other identity uses it.
+5. Remove Cloudflare DNS records only when the domain is not shared. On a shared
+   `v-decent.org` zone, keep the shared routing MX/SPF/DKIM and remove only the
+   app-specific custom address.
+6. Remove the domain from Resend only when no other identity uses that domain.
+   Removing a shared sending domain breaks every other app on it.
+7. Remove the app's mail environment variables and redeploy so no stale token
    remains.
-10. Remove the owner's send-as identity from the mail client or password manager.
-11. Record the decommission actor, timestamp, address, and every DNS/provider
-    change in the audit log.
+8. Remove the owner's send-as identity from the mail client or password manager.
+9. Record the decommission actor, timestamp, address, and every DNS/provider
+   change in the audit log.
 
 ## 10. Escalation and rollback
 

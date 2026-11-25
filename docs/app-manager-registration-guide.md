@@ -74,6 +74,9 @@ lowercase/dot/underscore/hyphen policy and avoiding reserved names.
   and not reserved. A local-part change resets the identity to
   `pending_destination`, so it cannot send until an operator reconciles and
   re-activates it.
+- The default namespace is reserved for every registered app: `<shortname>`
+  and `contact-<shortname>` cannot be claimed by another app on the same
+  domain, even if the owning app has email disabled.
 - Any domain change, an address outside the app domain, or a custom domain
   requires V-Decent operator approval (custom domains also need DNS
   verification). A non-platform custom domain registered by a scoped user is

@@ -34,6 +34,7 @@ An identity address is `<local-part>@<app-domain>`.
 - The app domain is the domain selected in App Manager: `v-decent.org` by default, or the owner's custom domain.
 - Display name defaults to the app name.
 - One primary identity per app at launch.
+- Every registered app reserves `<shortname>` and `contact-<shortname>` on its app domain, even before email is enabled; another app cannot claim those local parts on the same domain.
 
 Local-part policy:
 

@@ -46,19 +46,35 @@ present in the base manifest.
 
 ## Email Support (optional per app)
 
-When the app needs to send or receive email:
+Read `docs/app-email-guide.md` in the V-Decent developer docs before
+implementing email. Key rules:
 
-1. Register the app email identity in App Manager (`email_enabled`,
-   `email_owner_inbox`; the default address is
-   `contact-<shortname>@<app-domain>`).
-2. Set `MAIL_API_URL`, `MAIL_API_TOKEN`, `MAIL_FROM`, and `MAIL_REPLY_TO` in
-   `.env.example`. Never put provider credentials in the app.
-3. Send through `POST /api/v1/app-mail/messages`; never set `From` or
-   `Reply-To` in the request.
-4. The owner receives replies through Cloudflare forwarding and replies with
-   mail-client send-as (Thunderbird first; Gmail has a 2027 caveat).
-5. Optional app-owned inbox: comply with the signed webhook contract in
-   `docs/app-email-guide.md`.
+- The app uses its own identity, normally
+  `contact-<shortname>@<app-domain>`. Never use V-Decent system addresses such
+  as `notifications@v-decent.org` or `contact@v-decent.org`; those are
+  platform-only and permission-controlled separately.
+- Email provisioning is currently operator-assisted. Ask the platform operator
+  for the identity and provide: app name/shortname, app domain, owner inbox,
+  inbound mode (`forward` or `webhook`), and the webhook URL if applicable.
+- Set `MAIL_API_URL`, `MAIL_API_TOKEN`, `MAIL_FROM`, `MAIL_REPLY_TO`,
+  `MAIL_INBOUND_MODE`, and `MAIL_INBOUND_WEBHOOK_SECRET` in `.env.example`;
+  never commit real secrets. Development/PoC uses
+  `https://notification-api-dev.v-decent.org`; Production uses
+  `https://notification-api.v-decent.org` once deployed.
+- Send through `POST /api/v1/app-mail/messages` with an `Idempotency-Key`;
+  never set `From` or `Reply-To` in the request. Poll
+  `GET /api/v1/app-mail/messages/{id}` until `accepted` or `failed`.
+- Receive through `forward` (Cloudflare forwards to the owner inbox) or
+  `webhook` (verify `X-VDecent-Signature`, persist by `deliveryId`, reply
+  through the app-mail API).
+- Owner send-as requires the operator to enable the SMTP listener/ingress and
+  issue the per-identity credential. Recommend Thunderbird; Gmail has the
+  announced January 2027 Send-As caveat.
+- Current limits: App Manager self-service and automated Cloudflare
+  provisioning are rolling out; Production Notification Service is not
+  deployed; inbound attachments are not forwarded in webhook mode at launch.
+- Use the guide for the full API contract, testing, troubleshooting, and
+  security/LGPD requirements.
 
 ## Workflow
 

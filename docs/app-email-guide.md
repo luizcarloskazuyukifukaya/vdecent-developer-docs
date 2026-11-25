@@ -16,6 +16,46 @@ App-specific email is separate from V-Decent system email. An app can send only 
 
 To request email support, provide the app name/shortname, app domain, owner inbox, and whether inbound forwarding is required. The operator returns the app address, status, and credentials.
 
+## Developer quick start (and AI-agent handoff)
+
+Use this checklist when an app needs to send and receive email.
+
+1. **Confirm the address model.** The app gets its own identity, normally `contact-<shortname>@<app-domain>`. Apps cannot use V-Decent system addresses such as `notifications@v-decent.org` or `contact@v-decent.org`.
+2. **Request provisioning from the platform operator.** Provide:
+   - app name and shortname
+   - app domain
+   - owner inbox (the private email that receives replies)
+   - inbound mode: `forward` or `webhook`
+   - webhook URL only for `webhook`
+   - the app-specific address you want, or accept the default
+
+   The operator returns the address, status, `MAIL_API_TOKEN`, and (for owner send-as) the SMTP credential.
+3. **Configure the app environment** for Development/PoC:
+
+   ```dotenv
+   MAIL_API_URL=https://notification-api-dev.v-decent.org
+   MAIL_API_TOKEN=
+   MAIL_FROM=contact-<shortname>@<app-domain>
+   MAIL_REPLY_TO=contact-<shortname>@<app-domain>
+   MAIL_INBOUND_MODE=forward
+   MAIL_INBOUND_WEBHOOK_SECRET=
+   ```
+
+   Production uses `https://notification-api.v-decent.org` once it is deployed. Never expose the token to the browser.
+4. **Implement sending.** Call `POST /api/v1/app-mail/messages` with the token and an `Idempotency-Key`; poll `GET /api/v1/app-mail/messages/{id}` until `accepted` or `failed`.
+5. **Choose receiving.**
+   - `forward` (default): no app code; the operator routes the app address to the owner inbox via Cloudflare, and the owner replies with send-as.
+   - `webhook`: expose a public HTTPS endpoint, verify `X-VDecent-Signature`, persist by `deliveryId`, and reply through the app-mail API.
+6. **Owner send-as.** The operator enables the SMTP submission listener/ingress and issues the per-identity credential; the owner configures Thunderbird (recommended) or Gmail (2027 caveat).
+7. **Test with an external inbox.** Send from the app, confirm `accepted`, reply from outside, confirm the owner inbox receives it, and check SPF/DKIM/DMARC.
+
+Current limits:
+
+- App Manager self-service email setup and automated Cloudflare provisioning are rolling out; until then the platform operator provisions the identity, Cloudflare routing, and credentials.
+- Production Notification Service is not deployed yet; use Development/PoC.
+- Inbound attachments in webhook mode are not forwarded at launch.
+- Apps cannot use V-Decent system sender addresses.
+
 1. [What you get](#1-what-you-get)
 2. [Address model and defaults](#2-address-model-and-defaults)
 3. [Environment contract](#3-environment-contract)

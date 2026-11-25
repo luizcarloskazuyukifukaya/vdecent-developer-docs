@@ -2,6 +2,20 @@
 
 Every V-Decent app can send automated email as a real address on its own app domain and let a human receive and answer replies as that same address. The app never holds provider credentials and never runs a mail server.
 
+## Status and provisioning
+
+App-specific email is separate from V-Decent system email. An app can send only as its own identity. Platform addresses such as `notifications@v-decent.org` and `contact@v-decent.org` are reserved for V-Decent services and are permission-controlled separately.
+
+| Capability | Current status | How it is enabled |
+| --- | --- | --- |
+| Send app email through the shared API | Available | Request an app email identity. The platform operator creates and activates it and provides `MAIL_API_URL` and `MAIL_API_TOKEN`. |
+| Owner send-as over SMTP | Available, operator-assisted | The operator enables the submission listener/ingress and provides the per-identity SMTP credential; the owner configures their mail client. |
+| Inbound replies forwarded to the owner inbox (Mode A) | Available, operator-assisted | The operator configures the Cloudflare Email Routing rule for the app address and verifies the owner inbox. |
+| App-owned inbox webhook (Mode B) | Available, operator-assisted | The operator configures the inbound mode, webhook URL, and one-time secret. |
+| Owner-facing App Manager email setup and automated Cloudflare provisioning | Planned/rolling out | Until it is available, the platform operator performs provisioning and reports the address and status. |
+
+To request email support, provide the app name/shortname, app domain, owner inbox, and whether inbound forwarding is required. The operator returns the app address, status, and credentials.
+
 1. [What you get](#1-what-you-get)
 2. [Address model and defaults](#2-address-model-and-defaults)
 3. [Environment contract](#3-environment-contract)
@@ -24,6 +38,8 @@ Every V-Decent app can send automated email as a real address on its own app dom
 - A send-as SMTP credential so the owner can answer replies from a normal mail client.
 
 `From` and `Reply-To` always resolve to the app identity address. Your request cannot override them, and the owner's private inbox is only a routing destination — it never appears in message headers.
+
+System addresses such as `notifications@v-decent.org` and `contact@v-decent.org` are not app identities and cannot be used by apps. They are platform senders with separate caller permissions.
 
 ## 2. Address model and defaults
 
@@ -49,7 +65,7 @@ Registration and changes:
 - You may change the local part on the existing app domain while it is free and not reserved.
 - Any domain change, or an address outside the app domain, requires V-Decent operator approval. Custom domains also need DNS verification; inbound on a custom domain requires the domain zone to be delegated to V-Decent's Cloudflare.
 - An identity becomes `active` only after destination and domain verification succeed. Until then it cannot send.
-- App owners can see the current address, lifecycle status, and owner inbox on the application detail page in App Manager.
+- When the App Manager email UI is enabled, app owners can see the current address, lifecycle status, and owner inbox on the application detail page. Until then, the platform operator provides that information.
 
 ## 3. Environment contract
 
@@ -121,7 +137,7 @@ Default quotas are 60 messages per minute and 1,000 per day per identity.
 
 ## 5. Owner send-as (SMTP)
 
-The owner replies as the app address by sending through the shared submission server.
+The owner replies as the app address by sending through the shared submission server. The platform operator must enable the submission listener and the `smtp.v-decent.org` ingress for the environment; the per-identity credential is then issued to the owner.
 
 | Setting | Value |
 | --- | --- |
@@ -154,6 +170,8 @@ This is Mode A and the default (`MAIL_INBOUND_MODE=forward`).
 - V-Decent stores no message content in this mode.
 
 The owner inbox must be verified in Cloudflare. An unverified destination breaks forwarding until the owner confirms it.
+
+Today this is operator-assisted: the platform operator creates the Cloudflare rule for the app address and verifies the owner inbox. The planned App Manager inbound automation will perform these steps when the owner saves the email configuration; until that rollout, the operator provides the address and forwarding status.
 
 ## 7. Optional app-owned inbox
 

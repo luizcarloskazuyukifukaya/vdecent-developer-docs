@@ -66,6 +66,13 @@ for it. The default address is `contact-<shortname>@<app-domain>`, e.g.
 `contact-alvoarte@v-decent.org`, with the local part following the
 lowercase/dot/underscore/hyphen policy and avoiding reserved names.
 
+The App Manager email setup UI and automated inbound provisioning are being
+rolled out. Until they are enabled for your app, the platform operator collects
+these inputs and provisions the identity, Cloudflare forwarding, and
+credentials, then reports the app address and status. The request flow is the
+same: supply the app domain, owner inbox, and whether inbound forwarding is
+required.
+
 - `email_status`, `email_approved_at`, and `email_approved_by` are
   server-managed. They are not registration inputs; only a global admin can
   activate an identity, and new registrations start in a safe pending or

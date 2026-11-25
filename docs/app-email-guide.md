@@ -48,6 +48,7 @@ Registration and changes:
 - You may change the local part on the existing app domain while it is free and not reserved.
 - Any domain change, or an address outside the app domain, requires V-Decent operator approval. Custom domains also need DNS verification; inbound on a custom domain requires the domain zone to be delegated to V-Decent's Cloudflare.
 - An identity becomes `active` only after destination and domain verification succeed. Until then it cannot send.
+- App owners can see the current address, lifecycle status, and owner inbox on the application detail page in App Manager.
 
 ## 3. Environment contract
 

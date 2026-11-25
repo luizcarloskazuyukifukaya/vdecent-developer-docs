@@ -41,6 +41,9 @@ platform will ask for it — do not skip or guess.
 | **Repository visibility, branch, GitHub account** | `Public` or `Private`, the deployment branch (e.g. `main`), and the owning GitHub account. |
 | **Developer Group** | The V-Decent developer group the app belongs to (e.g. "Sao Paulo Developers"). The platform resolves it on your behalf. |
 | **Environment variables** | The `.env` content (or where to find it). See below. |
+| **Email support** | Whether the app needs an email address (`email_enabled`). |
+| **Owner inbox** | The private email that receives replies; must be verified. |
+| **Email display name** | Name shown to recipients, defaulting to the app name. |
 
 ## Environment Variables
 
@@ -55,6 +58,40 @@ Variables** so they are injected into the running container:
 - Keep secrets out of the repository: only the production values you hand over
   (or values already present in the environment) are used. Never commit real
   secrets to the repository or paste them where they can be recorded.
+
+## Email address
+
+If the app sends or receives email, the platform registers an email identity
+for it. The default address is `contact-<shortname>@<app-domain>`, e.g.
+`contact-alvoarte@v-decent.org`, with the local part following the
+lowercase/dot/underscore/hyphen policy and avoiding reserved names.
+
+The App Manager email setup UI and automated inbound provisioning are being
+rolled out. Until they are enabled for your app, the platform operator collects
+these inputs and provisions the identity, Cloudflare forwarding, and
+credentials, then reports the app address and status. The request flow is the
+same: supply the app domain, owner inbox, and whether inbound forwarding is
+required.
+
+- `email_status`, `email_approved_at`, and `email_approved_by` are
+  server-managed. They are not registration inputs; only a global admin can
+  activate an identity, and new registrations start in a safe pending or
+  disabled state.
+- You may change the local part on the existing app domain while it is free
+  and not reserved. A local-part change resets the identity to
+  `pending_destination`, so it cannot send until an operator reconciles and
+  re-activates it.
+- The default namespace is reserved for every registered app: `<shortname>`
+  and `contact-<shortname>` cannot be claimed by another app on the same
+  domain, even if the owning app has email disabled.
+- Any domain change, an address outside the app domain, or a custom domain
+  requires V-Decent operator approval (custom domains also need DNS
+  verification). A non-platform custom domain registered by a scoped user is
+  marked `pending_domain` and cannot be activated without a global admin.
+- The owner inbox that receives replies must be verified.
+
+See `docs/app-email-guide.md` for the environment variables, the send API, and
+the optional app-owned inbox contract.
 
 ## What happens when you register and deploy
 

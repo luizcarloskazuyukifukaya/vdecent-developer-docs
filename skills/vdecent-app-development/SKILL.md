@@ -44,6 +44,22 @@ Local success is never evidence of App Manager compatibility. The dev/local
 override files legitimately add `ports:`, which masks a violation still
 present in the base manifest.
 
+## Email Support (optional per app)
+
+When the app needs to send or receive email:
+
+1. Register the app email identity in App Manager (`email_enabled`,
+   `email_owner_inbox`; the default address is
+   `contact-<shortname>@<app-domain>`).
+2. Set `MAIL_API_URL`, `MAIL_API_TOKEN`, `MAIL_FROM`, and `MAIL_REPLY_TO` in
+   `.env.example`. Never put provider credentials in the app.
+3. Send through `POST /api/v1/app-mail/messages`; never set `From` or
+   `Reply-To` in the request.
+4. The owner receives replies through Cloudflare forwarding and replies with
+   mail-client send-as (Thunderbird first; Gmail has a 2027 caveat).
+5. Optional app-owned inbox: comply with the signed webhook contract in
+   `docs/app-email-guide.md`.
+
 ## Workflow
 
 1. **Collect the App Manager form** — application name, shortname/subdomain,

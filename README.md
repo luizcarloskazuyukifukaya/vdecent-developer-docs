@@ -36,6 +36,12 @@ shortname, target URL, GitHub account, `.env` content), how environment
 variables are injected, what happens during registration/deployment, and how
 to verify the public site.
 
+### 5. App Email Support Guide
+**File:** `docs/app-email-guide.md`
+How an app gets an email address, sends mail through the shared gateway, and
+lets the owner receive and answer replies as that address. Operators use
+`docs/app-email-operator-runbook.md` for provisioning.
+
 ## How to Use the AI Agent Prompt (Prompt Engineering Guide)
 
 This document is written to be pasted whole, not summarized. It is designed as a **system/briefing prompt** — the Non-Negotiable Rules, the rationalization tables, and the validation steps only work if the agent sees the exact wording, not your paraphrase of it. Summarizing it defeats the purpose: the rules exist specifically because agents rationalize their way past a plain instruction, and a summary strips the counter-argument that stops that.

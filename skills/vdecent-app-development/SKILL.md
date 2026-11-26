@@ -46,35 +46,38 @@ present in the base manifest.
 
 ## Email Support (optional per app)
 
-Read `docs/app-email-guide.md` in the V-Decent developer docs before
-implementing email. Key rules:
+Read `references/app-email-developer-guide.md` and
+`references/app-email-api-deep-dive.md` before implementing email.
 
-- The app uses its own identity, normally
-  `contact-<shortname>@<app-domain>`. Never use V-Decent system addresses such
-  as `notifications@v-decent.org` or `contact@v-decent.org`; those are
-  platform-only and permission-controlled separately.
-- Email provisioning is currently operator-assisted. Ask the platform operator
-  for the identity and provide: app name/shortname, app domain, owner inbox,
-  inbound mode (`forward` or `webhook`), and the webhook URL if applicable.
-- Set `MAIL_API_URL`, `MAIL_API_TOKEN`, `MAIL_FROM`, `MAIL_REPLY_TO`,
-  `MAIL_INBOUND_MODE`, and `MAIL_INBOUND_WEBHOOK_SECRET` in `.env.example`;
-  never commit real secrets. Development/PoC uses
-  `https://notification-api-dev.v-decent.org`; Production uses
-  `https://notification-api.v-decent.org` once deployed.
-- Send through `POST /api/v1/app-mail/messages` with an `Idempotency-Key`;
-  never set `From` or `Reply-To` in the request. Poll
-  `GET /api/v1/app-mail/messages/{id}` until `accepted` or `failed`.
-- Receive through `forward` (Cloudflare forwards to the owner inbox) or
-  `webhook` (verify `X-VDecent-Signature`, persist by `deliveryId`, reply
-  through the app-mail API).
-- Owner send-as requires the operator to enable the SMTP listener/ingress and
-  issue the per-identity credential. Recommend Thunderbird; Gmail has the
-  announced January 2027 Send-As caveat.
-- Current limits: App Manager self-service and automated Cloudflare
-  provisioning are rolling out; Production Notification Service is not
-  deployed; inbound attachments are not forwarded in webhook mode at launch.
-- Use the guide for the full API contract, testing, troubleshooting, and
-  security/LGPD requirements.
+- Each app uses its own approved identity, normally
+  `contact-<shortname>@<app-domain>`. Never use V-Decent platform addresses
+  such as `notifications@v-decent.org` or `contact@v-decent.org`.
+- Enablement is self-service in App Manager: the app owner/Admin opens the app
+  email page, accepts the separate monthly email add-on fee, enters the local
+  part, owner inbox, and display name, and submits for approval. A V-Decent
+  operator verifies the owner inbox and approves, setting the monthly amount.
+  App Manager then provisions the identity, Cloudflare routing/Worker, injects
+  `MAIL_*` environment variables, and redeploys the app.
+- Address changes go through a new operator-approved request; owner-inbox and
+  display-name changes apply without a new address request.
+- Read `MAIL_API_URL`, `MAIL_API_TOKEN`, `MAIL_FROM`, `MAIL_REPLY_TO`,
+  `MAIL_INBOUND_MODE`, and `MAIL_INBOUND_WEBHOOK_SECRET` from the environment.
+  Keep tokens and webhook secrets backend-only. Never set `From`/`Reply-To` in
+  API requests; the identity resolves them.
+- Send with `POST {MAIL_API_URL}/api/v1/app-mail/messages`, a stable
+  `Idempotency-Key`, and one recipient per request. `202` means queued, not
+  delivered; poll `GET /api/v1/app-mail/messages/{id}` until `accepted` or
+  `failed`. Retry timeouts, `429`, and `5xx` with the same key. Respect the
+  default quotas (60/minute, 1,000/day), attachment limits, and error codes in
+  the deep dive.
+- Inbound mode is `webhook`: expose
+  `POST https://<app-fqdn>/webhooks/vdecent-mail`, verify
+  `X-VDecent-Signature` over the raw body with
+  `MAIL_INBOUND_WEBHOOK_SECRET`, deduplicate by `deliveryId`, return `2xx`
+  quickly, and process asynchronously. A failed webhook is forwarded to the
+  owner inbox; inbound attachments are not forwarded at launch.
+- App Manager records the monthly email amount separately from the app hosting
+  fee; no charging integration is implied by this skill.
 
 ## Workflow
 

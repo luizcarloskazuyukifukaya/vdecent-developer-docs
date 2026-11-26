@@ -36,11 +36,18 @@ shortname, target URL, GitHub account, `.env` content), how environment
 variables are injected, what happens during registration/deployment, and how
 to verify the public site.
 
-### 5. App Email Support Guide
-**File:** `docs/app-email-guide.md`
-How an app gets an email address, sends mail through the shared gateway, and
-lets the owner receive and answer replies as that address. Operators use
-`docs/app-email-operator-runbook.md` for provisioning.
+### 5. App Email for Developers
+- **`docs/app-email-developer-guide.md`** — the primary developer guide:
+  enabling an app email address through App Manager, reading the injected
+  `MAIL_*` environment, sending outbound mail through the shared gateway,
+  receiving replies/webhooks, testing, and troubleshooting.
+- **`docs/app-email-api-deep-dive.md`** — the exact Notification Service
+  app-mail API contract: headers, payload fields and limits, receipts,
+  statuses, idempotency, retries, quotas, errors, retention, attachments, and
+  inbound webhook signature verification with Python/Node examples.
+- **`docs/app-email-guide.md`** — the broader reference, including owner
+  send-as and operator/client background. Operators use
+  `docs/app-email-operator-runbook.md` for provisioning.
 
 ## How to Use the AI Agent Prompt (Prompt Engineering Guide)
 

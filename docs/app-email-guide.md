@@ -1,3 +1,5 @@
+> **Current developer path:** use the [App Email Developer Guide](app-email-developer-guide.md) for App Manager self-service enablement and app-side sending, and the [App Email API Deep Dive](app-email-api-deep-dive.md) for the exact Notification Service contract. This page remains the broader reference, including operator and owner-client material.
+
 # App Email Support
 
 Every V-Decent app can send automated email as a real address on its own app domain and let a human receive and answer replies as that same address. The app never holds provider credentials and never runs a mail server.
